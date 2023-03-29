@@ -53,16 +53,31 @@ async function generateSubjectMappingJSON() {
 }
 
 async function getCourseOfferingDataForSubject(subject) {
+  const courseHeaderRegex = /(([A-Z]+\s*\d+)([A-Z]*))\s*-\s*(.+)/;
   const getCourseOfferingData = async (courseHeader) => {
-    const courseDescriptionElement = courseHeader.next;
-    const courseOfferingTimetable = courseDescriptionElement.next;
+    // console.log(courseHeader);
+    let courseDescriptionElement = courseHeader.next;
+    while (courseDescriptionElement.type !== "tag") {
+      courseDescriptionElement = courseDescriptionElement.next;
+    }    
     const headerText = courseHeader.firstChild.data;
-    // work in progress lol
-    let courseCode;
-    let courseOfferingSuffix;
-    let courseName;
-    let courseDescription;
-    return headerText;
+    const headerTextMatches = headerText.match(courseHeaderRegex);
+    if (!headerTextMatches) {
+      throw new Error("Could not match courseHeaderRegex with the course header");
+    }
+    let courseOffering = headerTextMatches[1];
+    let courseCode = headerTextMatches[2];
+    let courseOfferingSuffix = (headerTextMatches[3] === "" ? null : headerTextMatches[3]);
+    let courseName = headerTextMatches[4];
+    let courseDescription = courseDescriptionElement.lastChild.data.trim();
+    // todo: split the course description and extract antirequisites + extra information
+    return {
+      courseOffering: courseOffering,
+      courseCode: courseCode,
+      courseOfferingSuffix: courseOfferingSuffix,
+      courseName: courseName,
+      courseDescription: courseDescription,
+    };
   };
 
   const subjectCode = subjectMapping[subject];
@@ -74,12 +89,13 @@ async function getCourseOfferingDataForSubject(subject) {
   for (let i = 0; i < courseHeaders.length; ++i) {
     console.log(`Getting header ${i + 1}`);
     courseOfferingData.push(await getCourseOfferingData(courseHeaders[i]));
+    break;
   }
   console.log(courseOfferingData);
 }
 
 async function main() {
-  const subject = "mechatronicSystemsEngineering";
+  const subject = "calculus";
   const courseOfferingData = await getCourseOfferingDataForSubject(subject);
 }
 
