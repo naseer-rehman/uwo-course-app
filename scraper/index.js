@@ -1,8 +1,13 @@
 import * as cheerio from 'cheerio';
 import axios from "axios";
 import fs from "fs";
-import subjectMapping from "./subjectMapping.json" assert { type: "json" };;
 
+let subjectMapping = null;
+
+function initializeSubjectMapping() {
+  if (subjectMapping) return;
+  subjectMapping = JSON.parse(fs.readFileSync("subjectMapping.json"));
+}
 
 /**
  * Obtain the course offering information for a subject.
@@ -95,6 +100,7 @@ async function getCourseOfferingDataForSubject(subject) {
 }
 
 async function main() {
+  initializeSubjectMapping();
   const subject = "calculus";
   const courseOfferingData = await getCourseOfferingDataForSubject(subject);
 }
