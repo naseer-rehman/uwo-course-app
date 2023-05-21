@@ -4,7 +4,7 @@ import path, { dirname } from "path";
 import { fileURLToPath } from 'url';
 import fs from "fs";
 
-interface SubjectMapping {
+interface TimetableSubjectMapping {
   [key: string]: string,
 }
 
@@ -16,18 +16,18 @@ interface CourseOfferingData {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-let subjectMapping: SubjectMapping = {};
+let timetableSubjectMapping: TimetableSubjectMapping = {};
 
 /**
- * Reads the subjectMapping.json file and loads it into memory.
+ * Reads the timetableSubjectMapping.json file and loads it into memory.
  * @returns 
  */
-function initializeSubjectMapping(): void {
-  if (Object.keys(subjectMapping).length !== 0) {
+function initializeTimetableSubjectMapping(): void {
+  if (Object.keys(timetableSubjectMapping).length !== 0) {
     return;
   }
-  const subjectMappingJSONPath = path.join(__dirname, "..", "subjectMapping.json");
-  subjectMapping = JSON.parse(fs.readFileSync(subjectMappingJSONPath, "utf8"));
+  const subjectMappingJSONPath = path.join(__dirname, "..", "timetableSubjectMapping.json");
+  timetableSubjectMapping = JSON.parse(fs.readFileSync(subjectMappingJSONPath, "utf8"));
 }
 
 /**
@@ -51,9 +51,7 @@ async function getPageDataForSubject(subject:string) {
 };
 
 /**
- * Generates a JSON file containing mappings from subject codes used in this program
- * to a subject code used in Western's websites/applications.
- * @param {string} outputFileName the name of the output JSON file
+ * Turns a regular course name into a valid camelCase key for the subject mapping
  */
 async function generateSubjectMappingJSON(outputFileName = "subjectMapping") {
   const PAGE_URL = "https://studentservices.uwo.ca/secure/timetables/mastertt/ttindex.cfm";
@@ -74,6 +72,12 @@ async function generateSubjectMappingJSON(outputFileName = "subjectMapping") {
     }
     return words.join("");
   };
+
+/**
+   * Takes only the first "word" made up of alphanumeric characters and removes the rest of the string 
+   * @param value the string value
+   * @returns the stripped string value
+   */
   const stripValue = (value: string) => {
     const matches = value.match(/\w+/);
     if (matches === null) {
@@ -81,6 +85,19 @@ async function generateSubjectMappingJSON(outputFileName = "subjectMapping") {
     }
     return matches[0];
   };
+
+/**
+ * Generates a JSON file containing mappings from subject codes used in this program
+ * to a subject code used in Western's websites/applications.
+ * @param {string} outputFileName the name of the output JSON file
+ */
+async function generateTimetableSubjectMappingJSON(outputFileName = "timetableSubjectMapping") {
+  const PAGE_URL = "https://studentservices.uwo.ca/secure/timetables/mastertt/ttindex.cfm";
+  const pageData = await axios.get(PAGE_URL);
+  const $ = await cheerio.load(pageData.data);
+  const subjectOptions = await $("#inputSubject").children("option");
+  const mapping: TimetableSubjectMapping = {};
+  
   for (let i = 0; i < subjectOptions.length; ++i) {
     const option = subjectOptions[i];
     if (option.attribs?.value && option.attribs.value.length > 0) {
@@ -95,6 +112,62 @@ async function generateSubjectMappingJSON(outputFileName = "subjectMapping") {
     }
   }
   fs.writeFileSync(`${outputFileName}.json`, JSON.stringify(mapping), "utf8");
+}
+
+/**
+ * Obtain the course offering information for a subject.
+ * @param {string} subject the subject code, must be a key in subject mapping JSON file
+ */
+async function getTimetablePageDataForSubject(subject:string) {
+  const PAGE_URL = "https://studentservices.uwo.ca/secure/timetables/mastertt/ttindex.cfm";
+  if (timetableSubjectMapping.hasOwnProperty(subject)) {
+    const config: AxiosRequestConfig = {
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+    };
+    const data = `subject=${timetableSubjectMapping[subject]}&Designation=Any&catalognbr=&CourseTime=All&Component=All&time=&end_time=&day=m&day=tu&day=w&day=th&day=f&LocationCode=Any&command=search`;
+    const pageData = await axios.post(PAGE_URL, data, config);
+    return pageData;
+  } else {
+    throw new Error("Invalid subject");
+  }
+};
+
+/**
+ * Work in progress
+ * @param subject 
+ */
+async function getCourseCalendarPageDataForSubject(subject: string) {
+  if (!(subject in timetableSubjectMapping)) {
+    throw new Error("Invalid subject");
+  }
+  const timetableSubjectCode = timetableSubjectMapping[subject];
+  const PAGE_URL = `https://www.westerncalendar.uwo.ca/Courses.cfm?Subject=${timetableSubjectCode}&SelectedCalendar=Live&ArchiveID=`;
+  const pageData = await axios.get(PAGE_URL);
+  return pageData;
+}
+
+/**
+ * Get the information for all courses offered by Western.
+ * @returns TBD
+ */
+async function getCourseInformationDataForSubject(subject: string) {
+  const pageData = await getCourseCalendarPageDataForSubject(subject);
+  const $ = await cheerio.load(pageData.data);
+  const anchorsForCourseInformation = $(".col-md-12 .panel-body .col-xs-12:last-of-type a");
+  const linksForCourseInformation = [];
+  const isAnchorElementOfCorrectType = (elem) => {
+    
+  };
+  // console.log(anchorsForCourseInformation); 
+  for (const elem of anchorsForCourseInformation) {
+    if ("name" in elem && elem.name == "a") {
+      
+    } else {
+      throw new Error("Retrieved a non-anchor element from the course calendar page");
+    }
+  }
 }
 
 /**
@@ -157,14 +230,14 @@ async function getCourseOfferingDataForSubject(subject: string) {
     console.log(headers.text());
   }
 
-  if (subject in subjectMapping === false) {
+  if (subject in timetableSubjectMapping === false) {
     throw new Error("Invalid subject");
   }
-  const subjectCode = subjectMapping[subject];
-  const pageData = await getPageDataForSubject(subject);
+  const subjectCode = timetableSubjectMapping[subject];
+  const pageData = await getTimetablePageDataForSubject(subject);
   const $ = await cheerio.load(pageData.data);
   const courseHeaders = await $("div.span12 > h4");
-  let courseOfferingData = getCourseOfferingDatav2(courseHeaders);
+  let courseOfferingData = await getCourseOfferingDatav2(courseHeaders);
   // for (let i = 0; i < courseHeaders.length; ++i) {
   //   console.log(`Getting header ${i + 1}`);
   //   courseOfferingData.push(await getCourseOfferingData(courseHeaders[i]));
@@ -174,9 +247,7 @@ async function getCourseOfferingDataForSubject(subject: string) {
 }
 
 async function main() {
-  initializeSubjectMapping();
-  const subject = "calculus";
-  const courseOfferingData = await getCourseOfferingDataForSubject(subject);
+  initializeTimetableSubjectMapping();
 }
 
 main();
