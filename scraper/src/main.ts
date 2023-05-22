@@ -1,4 +1,5 @@
 import * as cheerio from 'cheerio';
+
 import axios, { AxiosRequestConfig } from "axios";
 import path, { dirname } from "path";
 import { fileURLToPath } from 'url';
@@ -17,6 +18,14 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 let timetableSubjectMapping: TimetableSubjectMapping = {};
+
+/**
+ * @param time 
+ * @returns a promise that resolves in the specified time
+ */
+const promiseTimeout = (time: number): Promise<null> => {
+  return new Promise(resolve => setTimeout(() => resolve(null), time * 1000));
+};
 
 /**
  * Reads the timetableSubjectMapping.json file and loads it into memory.
@@ -167,26 +176,42 @@ async function getCourseInformationLinksForSubject(subject: string) {
 async function getCourseInformationFromLink(link: string) {
   const pageData = await axios.get(link);
   const $ = cheerio.load(pageData.data);
-  const courseCodeHeader = $("#CourseInformationDiv > div.col-md-12 > h2");
-  const courseNameHeader = $("#CourseInformationDiv > div.col-md-12 > h3");
-  const courseDescriptionElement = $(`#CourseInformationDiv > div > label[for="CourseDescription"] + div`);
-  const preOrCoRequisitesHeader = $(`#CourseInformationDiv > div > label[for="Antirequisites"] + div`);
+  // Selections for each element we need to extract information from
+  const courseCodeHeader = $("#CourseInformationDiv > div.col-md-12:first-of-type > h2");
+  const courseNameHeader = $("#CourseInformationDiv > div.col-md-12:first-of-type > h3");
+  // This selection should include both the course description div and the 
+  // pre/corequisite information div.
+  const courseDescriptionLabelSelection = $(`#CourseInformationDiv > .col-xs-12 > label[for="CourseDescription"] + div`);
   const antirequisitesContainer = $(`#CourseInformationDiv > div > label[for="Antirequisites"] + div`);
   const extraInformationContainer = $(`#CourseInformationDiv > div > label[for="ExtraInformation"] + div`);
-  const courseWeightHeader = $("#CourseInformationDiv > div:nth-child(13) > h5:nth-child(1)");
-  const breadthInformationHeader = $("#CourseInformationDiv > div:nth-child(13) > h5:nth-child(2)");
-  const subjectCodeHeader = $("#CourseInformationDiv > div:nth-child(13) > h5:nth-child(3)");
-  console.log(
-    courseCodeHeader,
-    courseNameHeader,
-    courseDescriptionElement,
-    preOrCoRequisitesHeader,
-    antirequisitesContainer,
-    extraInformationContainer,
-    courseWeightHeader,
-    breadthInformationHeader,
-    subjectCodeHeader
+  const courseWeightHeader = $("#CourseInformationDiv > .col-xs-12:last-of-type > h5:nth-child(1)");
+  const breadthInformationHeader = $("#CourseInformationDiv > .col-xs-12:last-of-type > h5:nth-child(2)");
+  const subjectCodeHeader = $("#CourseInformationDiv > .col-xs-12:last-of-type > h5:nth-child(3)");
+
+  /* Contains logic to assert we get matches for the selections above, might use, might not.
+  const assertNonEmptySets = (...args: cheerio.Cheerio<cheerio.Element>[]) => {
+    const areNonEmpty = args.reduce((prev, item) => (prev && item.length > 0), true);
+    if (areNonEmpty === false) 
+      throw new Error("At least one selection from course calendar page did not get a match");
+  };
+
+  assertNonEmptySets(
+    courseCodeHeader, courseNameHeader, 
+    courseDescriptionLabelSelection, antirequisitesContainer,
+    extraInformationContainer, courseWeightHeader,
+    breadthInformationHeader, subjectCodeHeader
   );
+  */
+  
+  const courseDescriptionDiv = $(courseDescriptionLabelSelection[0]);
+  let preOrCorequisitesDiv: cheerio.Cheerio<cheerio.Element> | null = null;
+  if (courseDescriptionLabelSelection.length > 1) {
+    preOrCorequisitesDiv = $(courseDescriptionLabelSelection[1]);
+  }
+
+  const courseCode = courseCodeHeader.first().text().trim();
+  const courseName = courseNameHeader.first().text().trim();
+
   return {
     name: "some name",
     courseCode: "SOMECODE 4411",
@@ -199,7 +224,7 @@ async function getCourseInformationFromLink(link: string) {
     prerequisites: "not sure if this is a list or text",
     corequisites: "not sure if this is a list or text",
     essayCourse: false,
-    validSuffixes: ["A", "B", "C"], // This information doesn't seem like its available from this page
+    validSuffixes: ["A", "B", "C"],
   }
 }
 
@@ -209,9 +234,11 @@ async function getCourseInformationFromLink(link: string) {
  */
 async function getCourseInformationDataForSubject(subject: string) {
   const links = await getCourseInformationLinksForSubject(subject);
+  await promiseTimeout(2);
   for (const link of links) {
     const courseInformation = await getCourseInformationFromLink(link);
-    break; // Remove this once we are able to reliably scrape the course information data
+    await promiseTimeout(2);
+    // break; // Remove this once we are able to reliably scrape the course information data
   }
 }
 
@@ -288,8 +315,9 @@ async function getCourseOfferingDataForSubject(subject: string) {
 
 async function main() {
   initializeTimetableSubjectMapping();
-  const subject = "persian";
-  const courseInformationData = await getCourseInformationDataForSubject(subject);
+  // const subject = "mathematics";
+  const courseInformation = await getCourseInformationFromLink("https://www.westerncalendar.uwo.ca/Courses.cfm?CourseAcadCalendarID=MAIN_018802_1&SelectedCalendar=Live&ArchiveID=");
+  // const courseInformationData = await getCourseInformationDataForSubject(subject);
   // const courseOfferingData = await getCourseOfferingDataForSubject(subject);
 }
 
