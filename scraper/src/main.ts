@@ -31,60 +31,46 @@ function initializeTimetableSubjectMapping(): void {
 }
 
 /**
- * Obtain the course offering information for a subject.
- * @param {string} subject the subject code, must be a key in subject mapping JSON file
+ * Reads the courseCalendarSubjectMapping.json file and loads it into memory.
+ * @returns 
  */
-async function getPageDataForSubject(subject:string) {
-  const PAGE_URL = "https://studentservices.uwo.ca/secure/timetables/mastertt/ttindex.cfm";
-  if (subjectMapping.hasOwnProperty(subject)) {
-    const config: AxiosRequestConfig = {
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-    };
-    const data = `subject=${subjectMapping[subject]}&Designation=Any&catalognbr=&CourseTime=All&Component=All&time=&end_time=&day=m&day=tu&day=w&day=th&day=f&LocationCode=Any&command=search`;
-    const pageData = await axios.post(PAGE_URL, data, config);
-    return pageData;
-  } else {
-    throw new Error("Invalid subject");
+function initializeCourseCalendarSubjectMapping(): void {
+  if (Object.keys(timetableSubjectMapping).length !== 0) {
+    return;
   }
-};
+  const subjectMappingJSONPath = path.join(__dirname, "..", "courseCalendarSubjectMapping.json");
+  timetableSubjectMapping = JSON.parse(fs.readFileSync(subjectMappingJSONPath, "utf8"));
+}
 
 /**
  * Turns a regular course name into a valid camelCase key for the subject mapping
  */
-async function generateSubjectMappingJSON(outputFileName = "subjectMapping") {
-  const PAGE_URL = "https://studentservices.uwo.ca/secure/timetables/mastertt/ttindex.cfm";
-  const pageData = await axios.get(PAGE_URL);
-  const $ = await cheerio.load(pageData.data);
-  const subjectOptions = await $("#inputSubject").children("option");
-  const mapping: SubjectMapping = {};
-  const keyify = (name: string) => {
-    // Extract only alphabetical words
-    const words = name.match(/\w+/g);
-    if (words === null) {
-      throw new Error(`No words found in string "${name}"`);
-    }
-    // camelCase-ify the words
-    words[0] = words[0].toLowerCase();
-    for (let i = 1; i < words.length; ++i) {
-      words[i] = words[i].charAt(0).toUpperCase() + words[i].substring(1);
-    }
-    return words.join("");
-  };
+const keyify = (name: string) => {
+  // Extract only alphabetical words
+  const words = name.match(/\w+/g);
+  if (words === null) {
+    throw new Error(`No words found in string "${name}"`);
+  }
+  // camelCase-ify the words
+  words[0] = words[0].toLowerCase();
+  for (let i = 1; i < words.length; ++i) {
+    words[i] = words[i].charAt(0).toUpperCase() + words[i].substring(1);
+  }
+  return words.join("");
+};
 
 /**
    * Takes only the first "word" made up of alphanumeric characters and removes the rest of the string 
    * @param value the string value
    * @returns the stripped string value
    */
-  const stripValue = (value: string) => {
-    const matches = value.match(/\w+/);
-    if (matches === null) {
-      throw new Error(`Found no words in the provided string: "${value}"`);
-    }
-    return matches[0];
-  };
+const stripValue = (value: string) => {
+  const matches = value.match(/\w+/);
+  if (matches === null) {
+    throw new Error(`Found no words in the provided string: "${value}"`);
+  }
+  return matches[0];
+};
 
 /**
  * Generates a JSON file containing mappings from subject codes used in this program
@@ -149,24 +135,83 @@ async function getCourseCalendarPageDataForSubject(subject: string) {
 }
 
 /**
- * Get the information for all courses offered by Western.
- * @returns TBD
+ * Retrieves the links to each course with the given subject. These links
+ * will point to the information page for each of the courses in the given subject.
+ * @param subject 
  */
-async function getCourseInformationDataForSubject(subject: string) {
+async function getCourseInformationLinksForSubject(subject: string) {
   const pageData = await getCourseCalendarPageDataForSubject(subject);
   const $ = await cheerio.load(pageData.data);
   const anchorsForCourseInformation = $(".col-md-12 .panel-body .col-xs-12:last-of-type a");
   const linksForCourseInformation = [];
-  const isAnchorElementOfCorrectType = (elem) => {
-    
+  const isElementOfCorrectType = (elem: cheerio.Element) => {
+    const pattern = /Courses\.cfm\?CourseAcadCalendarID=.+?&SelectedCalendar=Live&ArchiveID=/g;
+    if (!("name" in elem && elem.name == "a" && "href" in elem.attribs)) return false;
+    return !!elem.attribs.href.match(pattern);
   };
-  // console.log(anchorsForCourseInformation); 
   for (const elem of anchorsForCourseInformation) {
-    if ("name" in elem && elem.name == "a") {
-      
+    if (isElementOfCorrectType(elem)) {
+      // Then we add the links from each of these anchor elements to a list so we can gather the data
+      linksForCourseInformation.push(`https://www.westerncalendar.uwo.ca/${elem.attribs.href}`);
     } else {
       throw new Error("Retrieved a non-anchor element from the course calendar page");
     }
+  }
+  return linksForCourseInformation;
+}
+
+/**
+ * Retrieves all the information of a course from its information page provided as a link.
+ * @param link 
+ */
+async function getCourseInformationFromLink(link: string) {
+  const pageData = await axios.get(link);
+  const $ = cheerio.load(pageData.data);
+  const courseCodeHeader = $("#CourseInformationDiv > div.col-md-12 > h2");
+  const courseNameHeader = $("#CourseInformationDiv > div.col-md-12 > h3");
+  const courseDescriptionElement = $(`#CourseInformationDiv > div > label[for="CourseDescription"] + div`);
+  const preOrCoRequisitesHeader = $(`#CourseInformationDiv > div > label[for="Antirequisites"] + div`);
+  const antirequisitesContainer = $(`#CourseInformationDiv > div > label[for="Antirequisites"] + div`);
+  const extraInformationContainer = $(`#CourseInformationDiv > div > label[for="ExtraInformation"] + div`);
+  const courseWeightHeader = $("#CourseInformationDiv > div:nth-child(13) > h5:nth-child(1)");
+  const breadthInformationHeader = $("#CourseInformationDiv > div:nth-child(13) > h5:nth-child(2)");
+  const subjectCodeHeader = $("#CourseInformationDiv > div:nth-child(13) > h5:nth-child(3)");
+  console.log(
+    courseCodeHeader,
+    courseNameHeader,
+    courseDescriptionElement,
+    preOrCoRequisitesHeader,
+    antirequisitesContainer,
+    extraInformationContainer,
+    courseWeightHeader,
+    breadthInformationHeader,
+    subjectCodeHeader
+  );
+  return {
+    name: "some name",
+    courseCode: "SOMECODE 4411",
+    subjectCode: "SUBJECTCODE",
+    courseNumber: "4411",
+    subject: "Some Subject",
+    courseWeight: 0.5,
+    breadth: "C",
+    extraInformation: "3 lecture hours",
+    prerequisites: "not sure if this is a list or text",
+    corequisites: "not sure if this is a list or text",
+    essayCourse: false,
+    validSuffixes: ["A", "B", "C"], // This information doesn't seem like its available from this page
+  }
+}
+
+/**
+ * Get the information for all courses offered by Western.
+ * @returns TBD
+ */
+async function getCourseInformationDataForSubject(subject: string) {
+  const links = await getCourseInformationLinksForSubject(subject);
+  for (const link of links) {
+    const courseInformation = await getCourseInformationFromLink(link);
+    break; // Remove this once we are able to reliably scrape the course information data
   }
 }
 
@@ -227,7 +272,8 @@ async function getCourseOfferingDataForSubject(subject: string) {
   // };
 
   const getCourseOfferingDatav2 = async (headers: cheerio.Cheerio<cheerio.Element>) => {
-    console.log(headers.text());
+    // console.log(headers.text());
+    
   }
 
   if (subject in timetableSubjectMapping === false) {
@@ -238,16 +284,13 @@ async function getCourseOfferingDataForSubject(subject: string) {
   const $ = await cheerio.load(pageData.data);
   const courseHeaders = await $("div.span12 > h4");
   let courseOfferingData = await getCourseOfferingDatav2(courseHeaders);
-  // for (let i = 0; i < courseHeaders.length; ++i) {
-  //   console.log(`Getting header ${i + 1}`);
-  //   courseOfferingData.push(await getCourseOfferingData(courseHeaders[i]));
-  //   break;
-  // }
-  console.log(courseOfferingData);
 }
 
 async function main() {
   initializeTimetableSubjectMapping();
+  const subject = "persian";
+  const courseInformationData = await getCourseInformationDataForSubject(subject);
+  // const courseOfferingData = await getCourseOfferingDataForSubject(subject);
 }
 
 main();
