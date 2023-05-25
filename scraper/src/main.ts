@@ -174,10 +174,17 @@ async function getCourseInformationLinksForSubject(subject: string) {
  * @param link 
  */
 async function getCourseInformationFromLink(link: string) {
-  const pageData = await axios.get(link);
+  let pageData = null;
+  try {
+    pageData = await axios.get(link);
+  } catch (error: any) {
+    console.log(error.toJSON());
+  }
+  if (!pageData) return;
   const $ = cheerio.load(pageData.data);
   // Selections for each element we need to extract information from
-  const courseCodeHeader = $("#CourseInformationDiv > div.col-md-12:first-of-type > h2");
+  // Not sure what else to call this and I don't have time to think
+  const normalNameHeader = $("#CourseInformationDiv > div.col-md-12:first-of-type > h2");
   const courseNameHeader = $("#CourseInformationDiv > div.col-md-12:first-of-type > h3");
   // This selection should include both the course description div and the 
   // pre/corequisite information div.
@@ -209,22 +216,82 @@ async function getCourseInformationFromLink(link: string) {
     preOrCorequisitesDiv = $(courseDescriptionLabelSelection[1]);
   }
 
-  const courseCode = courseCodeHeader.first().text().trim();
+  const normalNameWithCodePattern = /\w+\s+(\d+)((?:[A-Z]\/?)+)/g;
+
+  const normalNameWithCourseCode = normalNameHeader.first().text().trim();
   const courseName = courseNameHeader.first().text().trim();
 
+  // this will contain the course number and the suffixes for the course
+  const normalNameWithCourseCodeMatchesList = [
+    ...normalNameWithCourseCode.matchAll(normalNameWithCodePattern)
+  ];
+  if (!normalNameWithCourseCodeMatchesList 
+    || normalNameWithCourseCodeMatchesList.length <= 0) {
+    throw new Error("Normal name with course code did not match the pattern");
+  }
+  const normalNameWithCourseCodeMatches = normalNameWithCourseCodeMatchesList[0];
+  
+  const extractSuffixesFromListInHeader = (suffixList: string): string[] => {
+    const listOfSuffixes: string[] = [];
+    // Matches all capital letters and possibly a forwards slash after 
+    const capitalsPattern = /(?:([A-Z])\/?)/g;
+    const matches = Array.from(suffixList.matchAll(capitalsPattern));
+    if (!matches || matches.length <= 0) return [];
+    for (const match of matches) {
+      // Second element is the captured group, aka the suffix we want to extract
+      listOfSuffixes.push(match[1]);
+    }
+    return listOfSuffixes;
+  }
+
+  const courseNumber = normalNameWithCourseCodeMatches[1];
+  const validSuffixes = extractSuffixesFromListInHeader(normalNameWithCourseCodeMatches[2]);
+  const courseDescription = courseDescriptionDiv.text().trim();
+  const getBoldedInformationLabelText = (set: cheerio.Cheerio<cheerio.Element> | null): string | null => {
+    if (set !== null && set.length > 0) {
+      return set.text().trim();
+    }
+    return null;
+  }
+  const antirequisites = getBoldedInformationLabelText(antirequisitesContainer);
+  const preOrCorequisites = getBoldedInformationLabelText(preOrCorequisitesDiv);
+  // TODO: Find out if this needs to be split up into prerequisites/corequisites
+  const extraInformation = getBoldedInformationLabelText(extraInformationContainer);
+  console.log(antirequisites,preOrCorequisites,extraInformation);
+  const getSmallLabelText = (set: cheerio.Cheerio<cheerio.Element> | null): string | null => {
+    if (set !== null && set.length > 0) {
+      const header = set[0];
+      if (header.children.length < 2) {
+        throw new Error("The small label element has less than 2 child nodes");
+      }
+      const secondChild = header.children[1];
+      if (secondChild.type !== "text") {
+        throw new Error("The second child node for the small label is not a text node");
+      }
+      return secondChild.data.trim();
+    }
+    return null;
+  };
+  const courseWeight = Number(getSmallLabelText(courseWeightHeader));
+  // TODO: figure out if we need to remove the "Category" portion of "Category C", for example.
+  const breadth = getSmallLabelText(breadthInformationHeader);
+  const subjectCode = getSmallLabelText(subjectCodeHeader);
+
   return {
-    name: "some name",
-    courseCode: "SOMECODE 4411",
-    subjectCode: "SUBJECTCODE",
-    courseNumber: "4411",
-    subject: "Some Subject",
-    courseWeight: 0.5,
-    breadth: "C",
-    extraInformation: "3 lecture hours",
+    name: courseName,
+    courseCode: `${subjectCode} ${courseNumber}`,
+    subjectCode,
+    courseNumber,
+    subject: "Some Subject", // TODO: Is this redundant information?
+    courseWeight,
+    breadth,
+    extraInformation,
     prerequisites: "not sure if this is a list or text",
     corequisites: "not sure if this is a list or text",
-    essayCourse: false,
-    validSuffixes: ["A", "B", "C"],
+    // TODO: Do we even need this here or should another part of the app be responsible
+    //       of determining this based on the valid suffixes? 
+    // essayCourse: false, 
+    validSuffixes,
   }
 }
 
