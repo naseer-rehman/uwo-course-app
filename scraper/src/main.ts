@@ -217,7 +217,6 @@ async function getCourseInformationFromLink(link: string) {
   }
 
   const normalNameWithCodePattern = /\w+\s+(\d+)((?:[A-Z]\/?)+)/g;
-
   const normalNameWithCourseCode = normalNameHeader.first().text().trim();
   const courseName = courseNameHeader.first().text().trim();
 
@@ -242,7 +241,7 @@ async function getCourseInformationFromLink(link: string) {
       listOfSuffixes.push(match[1]);
     }
     return listOfSuffixes;
-  }
+  };
 
   const courseNumber = normalNameWithCourseCodeMatches[1];
   const validSuffixes = extractSuffixesFromListInHeader(normalNameWithCourseCodeMatches[2]);
@@ -252,13 +251,46 @@ async function getCourseInformationFromLink(link: string) {
       return set.text().trim();
     }
     return null;
-  }
+  };
   const antirequisites = getBoldedInformationLabelText(antirequisitesContainer);
   // TODO: Find out if this needs to be split up into prerequisites/corequisites
-  const preOrCorequisites = getBoldedInformationLabelText(preOrCorequisitesDiv);
+  let requisiteInformationText = getBoldedInformationLabelText(preOrCorequisitesDiv);
+  // Remove any newlines/carriadge returns in the text
+  requisiteInformationText = requisiteInformationText
+    ? requisiteInformationText.replace(/(?:\r?\n)/g, "")
+    : null;
+  const extractRequisiteInformation = (requisiteInformationText: string | null) => {
+    /* 
+      The reason for these patterns is because I don't know in which order the
+      prerequisites, pre-or corequisites, or corequisites (if this one even exists) is listed
+    */
+    if (!requisiteInformationText) {
+      return {
+        preOrCorequisites: null, prerequisites: null, corequisites: null,
+      };
+    }
+    const patterns = {
+      prerequisites: /Prerequisite\(s\):\s+(.+?)(?:Pre-or Corequisite\(s\):|Corequisite\(s\):|$)/g,
+      corequisites: /(?<!Pre-or\s+)Corequisite\(s\):\s+(.+?)(?:Pre-or Corequisite\(s\):|Prerequisite\(s\):|$)/g,
+      preOrCorequisites: /Pre-or Corequisite\(s\):\s+(.+?)(?:Corequisite\(s\):|Prerequisite\(s\):|$)/g,
+    };
+
+    const getMatch = (pattern: RegExp): string | null => {
+      const matches = Array.from(requisiteInformationText.matchAll(pattern));
+      if (!matches || matches.length <= 0) return null;
+      // Return the first match, capture group 1
+      return matches[0][1].trim();
+    };
+
+    return {
+      preOrCorequisites: getMatch(patterns.preOrCorequisites),
+      prerequisites: getMatch(patterns.prerequisites),
+      corequisites: getMatch(patterns.corequisites),
+    };
+  };
+  const requisiteInformation = extractRequisiteInformation(requisiteInformationText);
+  console.log(requisiteInformation);
   const extraInformation = getBoldedInformationLabelText(extraInformationContainer);
-  console.log(preOrCorequisitesDiv?.text().trim());
-  // console.log(antirequisites,preOrCorequisites,extraInformation);
   const getSmallLabelText = (set: cheerio.Cheerio<cheerio.Element> | null): string | null => {
     if (set !== null && set.length > 0) {
       const header = set[0];
@@ -287,13 +319,14 @@ async function getCourseInformationFromLink(link: string) {
     courseWeight,
     breadth,
     extraInformation,
-    prerequisites: "not sure if this is a list or text",
-    corequisites: "not sure if this is a list or text",
-    // TODO: Do we even need this here or should another part of the app be responsible
-    //       of determining this based on the valid suffixes? 
+    preOrCorequisites: requisiteInformation.preOrCorequisites,
+    prerequisites: requisiteInformation.prerequisites,
+    corequisites: requisiteInformation.corequisites,
+    // TODO: Do we even need the below property here or should another part of the app be 
+    //       responsible of determining it based on the valid suffixes? 
     // essayCourse: false, 
     validSuffixes,
-  }
+  };
 }
 
 /**
@@ -384,8 +417,8 @@ async function getCourseOfferingDataForSubject(subject: string) {
 async function main() {
   initializeTimetableSubjectMapping();
   // const subject = "mathematics";
-  // const courseInformation = await getCourseInformationFromLink("https://www.westerncalendar.uwo.ca/Courses.cfm?CourseAcadCalendarID=MAIN_018802_1&SelectedCalendar=Live&ArchiveID=");
-  // await getCourseInformationFromLink("https://www.westerncalendar.uwo.ca/Courses.cfm?CourseAcadCalendarID=KINGS_028261_1&SelectedCalendar=Live&ArchiveID="); // WRITING 2301
+  const courseInformation = await getCourseInformationFromLink("https://www.westerncalendar.uwo.ca/Courses.cfm?CourseAcadCalendarID=MAIN_018802_1&SelectedCalendar=Live&ArchiveID=");
+  await getCourseInformationFromLink("https://www.westerncalendar.uwo.ca/Courses.cfm?CourseAcadCalendarID=KINGS_028261_1&SelectedCalendar=Live&ArchiveID="); // WRITING 2301
   await getCourseInformationFromLink("https://www.westerncalendar.uwo.ca/Courses.cfm?CourseAcadCalendarID=MAIN_025898_1&SelectedCalendar=Live&ArchiveID="); // ECE 3380
   // const courseInformationData = await getCourseInformationDataForSubject(subject);
   // const courseOfferingData = await getCourseOfferingDataForSubject(subject);
