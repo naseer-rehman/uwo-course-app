@@ -1,5 +1,5 @@
+// TODO: sneak Munna into here
 import * as cheerio from 'cheerio';
-
 import axios, { AxiosRequestConfig } from "axios";
 import path, { dirname } from "path";
 import { fileURLToPath } from 'url';
@@ -254,10 +254,11 @@ async function getCourseInformationFromLink(link: string) {
     return null;
   }
   const antirequisites = getBoldedInformationLabelText(antirequisitesContainer);
-  const preOrCorequisites = getBoldedInformationLabelText(preOrCorequisitesDiv);
   // TODO: Find out if this needs to be split up into prerequisites/corequisites
+  const preOrCorequisites = getBoldedInformationLabelText(preOrCorequisitesDiv);
   const extraInformation = getBoldedInformationLabelText(extraInformationContainer);
-  console.log(antirequisites,preOrCorequisites,extraInformation);
+  console.log(preOrCorequisitesDiv?.text().trim());
+  // console.log(antirequisites,preOrCorequisites,extraInformation);
   const getSmallLabelText = (set: cheerio.Cheerio<cheerio.Element> | null): string | null => {
     if (set !== null && set.length > 0) {
       const header = set[0];
@@ -383,7 +384,9 @@ async function getCourseOfferingDataForSubject(subject: string) {
 async function main() {
   initializeTimetableSubjectMapping();
   // const subject = "mathematics";
-  const courseInformation = await getCourseInformationFromLink("https://www.westerncalendar.uwo.ca/Courses.cfm?CourseAcadCalendarID=MAIN_018802_1&SelectedCalendar=Live&ArchiveID=");
+  // const courseInformation = await getCourseInformationFromLink("https://www.westerncalendar.uwo.ca/Courses.cfm?CourseAcadCalendarID=MAIN_018802_1&SelectedCalendar=Live&ArchiveID=");
+  // await getCourseInformationFromLink("https://www.westerncalendar.uwo.ca/Courses.cfm?CourseAcadCalendarID=KINGS_028261_1&SelectedCalendar=Live&ArchiveID="); // WRITING 2301
+  await getCourseInformationFromLink("https://www.westerncalendar.uwo.ca/Courses.cfm?CourseAcadCalendarID=MAIN_025898_1&SelectedCalendar=Live&ArchiveID="); // ECE 3380
   // const courseInformationData = await getCourseInformationDataForSubject(subject);
   // const courseOfferingData = await getCourseOfferingDataForSubject(subject);
 }
