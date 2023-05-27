@@ -151,19 +151,25 @@ async function getCourseCalendarPageDataForSubject(subject: string) {
 async function getCourseInformationLinksForSubject(subject: string) {
   const pageData = await getCourseCalendarPageDataForSubject(subject);
   const $ = await cheerio.load(pageData.data);
-  const anchorsForCourseInformation = $(".col-md-12 .panel-body .col-xs-12:last-of-type a");
+  // TODO: Maybe write some unit tests of some sort to ensure we are at least
+  //       matching all the anchor elements we need to extract the links from.
+  //       Matching for more than we need isn't an issue at all.
+  const anchorsForCourseInformation = $(".col-md-12 .course .panel-body > .col-xs-12 a");
   const linksForCourseInformation = [];
   const isElementOfCorrectType = (elem: cheerio.Element) => {
-    const pattern = /Courses\.cfm\?CourseAcadCalendarID=.+?&SelectedCalendar=Live&ArchiveID=/g;
+    const pattern = /Courses\.cfm\?CourseAcadCalendarID=MAIN_(.+?)&SelectedCalendar=Live&ArchiveID=/g;
     if (!("name" in elem && elem.name == "a" && "href" in elem.attribs)) return false;
-    return !!elem.attribs.href.match(pattern);
+    if (!elem.attribs.href.match(pattern)) return false;
+    const matches = Array.from(elem.attribs.href.matchAll(pattern));
+    return elem.firstChild && elem.firstChild.type === "text"
+      && !!elem.firstChild.data.match(/More\s+Details/gi);
   };
   for (const elem of anchorsForCourseInformation) {
     if (isElementOfCorrectType(elem)) {
       // Then we add the links from each of these anchor elements to a list so we can gather the data
-      linksForCourseInformation.push(`https://www.westerncalendar.uwo.ca/${elem.attribs.href}`);
-    } else {
-      throw new Error("Retrieved a non-anchor element from the course calendar page");
+      linksForCourseInformation.push(
+        `https://www.westerncalendar.uwo.ca/${elem.attribs.href}`
+      );
     }
   }
   return linksForCourseInformation;
@@ -253,7 +259,6 @@ async function getCourseInformationFromLink(link: string) {
     return null;
   };
   const antirequisites = getBoldedInformationLabelText(antirequisitesContainer);
-  // TODO: Find out if this needs to be split up into prerequisites/corequisites
   let requisiteInformationText = getBoldedInformationLabelText(preOrCorequisitesDiv);
   // Remove any newlines/carriadge returns in the text
   requisiteInformationText = requisiteInformationText
@@ -289,7 +294,6 @@ async function getCourseInformationFromLink(link: string) {
     };
   };
   const requisiteInformation = extractRequisiteInformation(requisiteInformationText);
-  console.log(requisiteInformation);
   const extraInformation = getBoldedInformationLabelText(extraInformationContainer);
   const getSmallLabelText = (set: cheerio.Cheerio<cheerio.Element> | null): string | null => {
     if (set !== null && set.length > 0) {
@@ -306,8 +310,21 @@ async function getCourseInformationFromLink(link: string) {
     return null;
   };
   const courseWeight = Number(getSmallLabelText(courseWeightHeader));
-  // TODO: figure out if we need to remove the "Category" portion of "Category C", for example.
-  const breadth = getSmallLabelText(breadthInformationHeader);
+  const extractBreadthCategoryLetter = (categoryTextInput: string | null): string | null => {
+    const categoryPattern = /Category\s+([ABC])/gi;
+    if (!categoryTextInput) {
+      return null;
+    }
+    const matches = Array.from(categoryTextInput.matchAll(categoryPattern));
+    if (!matches || matches.length <= 0) {
+      throw new Error(`Category text (${categoryTextInput}) does not match the pattern Category X`);
+    }
+    // Return the first match and the first capture group.
+    return matches[0][1];
+  };
+  const breadth = extractBreadthCategoryLetter(
+    getSmallLabelText(breadthInformationHeader)
+  );
   const subjectCode = getSmallLabelText(subjectCodeHeader);
 
   return {
@@ -315,7 +332,7 @@ async function getCourseInformationFromLink(link: string) {
     courseCode: `${subjectCode} ${courseNumber}`,
     subjectCode,
     courseNumber,
-    subject: "Some Subject", // TODO: Is this redundant information?
+    // subject: "Some Subject", // TODO: Is this redundant information?
     courseWeight,
     breadth,
     extraInformation,
@@ -338,8 +355,8 @@ async function getCourseInformationDataForSubject(subject: string) {
   await promiseTimeout(2);
   for (const link of links) {
     const courseInformation = await getCourseInformationFromLink(link);
+    console.log(courseInformation);
     await promiseTimeout(2);
-    // break; // Remove this once we are able to reliably scrape the course information data
   }
 }
 
@@ -416,11 +433,11 @@ async function getCourseOfferingDataForSubject(subject: string) {
 
 async function main() {
   initializeTimetableSubjectMapping();
-  // const subject = "mathematics";
-  const courseInformation = await getCourseInformationFromLink("https://www.westerncalendar.uwo.ca/Courses.cfm?CourseAcadCalendarID=MAIN_018802_1&SelectedCalendar=Live&ArchiveID=");
-  await getCourseInformationFromLink("https://www.westerncalendar.uwo.ca/Courses.cfm?CourseAcadCalendarID=KINGS_028261_1&SelectedCalendar=Live&ArchiveID="); // WRITING 2301
-  await getCourseInformationFromLink("https://www.westerncalendar.uwo.ca/Courses.cfm?CourseAcadCalendarID=MAIN_025898_1&SelectedCalendar=Live&ArchiveID="); // ECE 3380
-  // const courseInformationData = await getCourseInformationDataForSubject(subject);
+  const subject = "calculus";
+  // const courseInformation = await getCourseInformationFromLink("https://www.westerncalendar.uwo.ca/Courses.cfm?CourseAcadCalendarID=MAIN_018802_1&SelectedCalendar=Live&ArchiveID=");
+  // await getCourseInformationFromLink("https://www.westerncalendar.uwo.ca/Courses.cfm?CourseAcadCalendarID=KINGS_028261_1&SelectedCalendar=Live&ArchiveID="); // WRITING 2301
+  // await getCourseInformationFromLink("https://www.westerncalendar.uwo.ca/Courses.cfm?CourseAcadCalendarID=MAIN_025898_1&SelectedCalendar=Live&ArchiveID="); // ECE 3380
+  const courseInformationData = await getCourseInformationDataForSubject(subject);
   // const courseOfferingData = await getCourseOfferingDataForSubject(subject);
 }
 
