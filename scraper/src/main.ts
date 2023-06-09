@@ -1,6 +1,7 @@
 // TODO: sneak Munna into here
 import * as cheerio from 'cheerio';
 import axios, { AxiosRequestConfig } from "axios";
+import format from "html-format";
 import path, { dirname } from "path";
 import { fileURLToPath } from 'url';
 import fs from "fs";
@@ -366,69 +367,137 @@ async function getCourseInformationDataForSubject(subject: string) {
  */
 async function getCourseOfferingDataForSubject(subject: string) {
   const courseHeaderRegex = /(([A-Z]+\s*\d+)([A-Z]*))\s*-\s*(.+)/;
-  
-  // const getCourseOfferingData = async (courseHeader: cheerio.Element) => {
-  //   let courseDescriptionElement = courseHeader.nextSibling;
-  //   while (courseDescriptionElement !== null 
-  //     && courseDescriptionElement.type !== "tag") {
-  //     courseDescriptionElement = courseDescriptionElement.next;
-  //   }
-  //   if (courseDescriptionElement === null) {
-  //     throw new Error("Could not find course description element in DOM");
-  //   }
-
-  //   const headerText = courseHeader.firstChild.data;
-  //   if (courseHeader.firstChild && courseHeader.firstChild.data) {
-
-  //   }
-  //   const headerTextMatches = headerText.match(courseHeaderRegex);
-  //   if (!headerTextMatches) {
-  //     throw new Error("Could not match courseHeaderRegex with the course header");
-  //   }
-  //   let courseOffering = headerTextMatches[1];
-  //   let courseCode = headerTextMatches[2];
-  //   let courseOfferingSuffix = (headerTextMatches[3] === "" ? null : headerTextMatches[3]);
-  //   let courseName = headerTextMatches[4];
-  //   let courseDescription = courseDescriptionElement.lastChild.data.trim();
-  //   // todo: split the course description and extract antirequisites + extra information
-  //   let courseOfferingSections = [];
-    
-  //   let courseOfferingSectionsTable = courseDescriptionElement.next;
-  //   while (courseOfferingSectionsTable.type !== "tag") {
-  //     courseOfferingSectionsTable = courseOfferingSectionsTable.next;
-  //   }
-  //   let courseOfferingSectionsTableBody;
-  //   for (let i = 0; i < courseOfferingSectionsTableBody.length; ++i) {
-  //     const child = courseOfferingSectionsTableBody[i];
-  //     console.log("type: ", child.type);
-  //     if (child.type === "tbody") {
-
-  //     }
-  //   }
-
-  //   return {
-  //     courseOffering: courseOffering,
-  //     courseCode: courseCode,
-  //     courseOfferingSuffix: courseOfferingSuffix,
-  //     courseName: courseName,
-  //     courseDescription: courseDescription,
-  //     courseOfferingSections: courseOfferingSections,
-  //   };
-  // };
-
-  const getCourseOfferingDatav2 = async (headers: cheerio.Cheerio<cheerio.Element>) => {
-    // console.log(headers.text());
-    
-  }
 
   if (subject in timetableSubjectMapping === false) {
     throw new Error("Invalid subject");
   }
+
   const subjectCode = timetableSubjectMapping[subject];
   const pageData = await getTimetablePageDataForSubject(subject);
   const $ = await cheerio.load(pageData.data);
   const courseHeaders = await $("div.span12 > h4");
-  let courseOfferingData = await getCourseOfferingDatav2(courseHeaders);
+
+  let courseOfferingData = [];
+
+  const getTimetableDataFromTable = ($table: cheerio.Cheerio<cheerio.Element>): any => {
+    const $tableBody = $table.children("tbody");
+    const $tableRows = $tableBody.children("tr");
+
+    // TODO: Specify a proper return type (new interface?)
+    const getRowInformation = ($tableRow: cheerio.Cheerio<cheerio.Element>) => {
+      /**
+       * 
+       * @param $daysOfWeekEntry the `td` element that contains the table with the schedules days of the week
+       * @returns the encoded integer that represents the schedules days of the week.
+       */
+      const getDaysOfWeekInformation = ($daysOfWeekEntry: cheerio.Cheerio<cheerio.Element>): number => {
+        return 0;
+      }
+
+      const $rowEntries = $tableRow.children("td");
+      let currentEntry = $rowEntries.first()
+      const nextEntry = () => { currentEntry = currentEntry.next(); };
+      const getEntryText = () => currentEntry.text().trim();
+      const sectionNumber = getEntryText();
+      nextEntry();
+      const componentType = getEntryText();
+      nextEntry();
+      const classNumber = getEntryText();
+      nextEntry();
+      const daysOfTheWeek = getDaysOfWeekInformation(currentEntry);
+      nextEntry();
+      const startTime = getEntryText();
+      nextEntry();
+      const endTime = getEntryText();
+      nextEntry();
+      const location = getEntryText();
+      nextEntry();
+      const instructorName = getEntryText();
+      nextEntry();
+      const requisitesAndConstraints = getEntryText();
+      nextEntry();
+      const fillStatus = getEntryText();
+      nextEntry();
+      const campus = getEntryText(); 
+
+      return {
+        sectionNumber,
+        componentType,
+        classNumber,
+        daysOfTheWeek,
+        startTime,
+        endTime,
+        location,
+        instructorName,
+        requisitesAndConstraints,
+        fillStatus,
+        campus,
+      };
+    };
+    
+    console.log("getting each row information: ", $tableRows.length);
+    for (let i = 0; i < $tableRows.length; ++i) {
+      const rowInformation = getRowInformation($($tableRows[i]));
+      console.log(rowInformation);
+    }
+
+    // TODO: Figure out what the return structure will be.
+    // - Probably will be a list of objects containing the information for the row
+    return [];
+  };
+
+  /**
+   * 
+   * @param element element to find the next matching sibling for
+   * @param selector css selector
+   * @returns the next sibling element that matches the selector
+   */
+  const getNextMatchingSibling = (element: cheerio.Cheerio<cheerio.Element>, selector: string): cheerio.Cheerio<cheerio.Element> | null => { 
+    let nextSibling = element.next();
+    while (nextSibling && nextSibling.is(selector) === false) {
+      nextSibling = nextSibling.next();
+    }
+    if (!nextSibling) {
+      return null;
+    }
+    return nextSibling;
+  };
+
+  const getCourseOfferingDataFromHeader = (header: cheerio.Element) => {
+    const $header = $(header);
+    const $courseDescription = $header.next("p");
+    const $scheduleTable = getNextMatchingSibling($header, "table");
+    if (!$scheduleTable) {
+      throw new Error("Could not find the course offering schedule table");
+    }
+    // TODO: Define a course offering code = course code + offering suffix?
+    const courseHeaderPattern = /([A-Za-z]+)\s+(\d+)([A-Z]+)/g;
+    const courseHeaderMatches = Array.from(
+      $header.text().matchAll(courseHeaderPattern)
+    );
+    if (!courseHeaderMatches || courseHeaderMatches.length <= 0) {
+      throw new Error("Unable to match course offering header");
+    }
+    const courseHeaderMatch = courseHeaderMatches[0];
+    const subjectCode = courseHeaderMatch[1];
+    const courseNumber = courseHeaderMatch[2];
+    const suffixes = courseHeaderMatch[3];
+    const courseCode = `${subjectCode} ${courseNumber}`;
+    
+    // TODO: Find out if we want to extract the requisite and extra information from the course description label
+    //  Or do I instead only extra Extra Information from the course description?
+    const courseDescription = $courseDescription.text();
+
+    console.log(`Getting row information for ${courseCode}`);
+    const timetableInformation = getTimetableDataFromTable($scheduleTable);
+  };
+
+  for (let i = 0; i < courseHeaders.length; ++i) {
+    getCourseOfferingDataFromHeader(courseHeaders[i]);
+    break;
+    await promiseTimeout(1);
+  }
+
 }
 
 async function main() {
@@ -437,8 +506,8 @@ async function main() {
   // const courseInformation = await getCourseInformationFromLink("https://www.westerncalendar.uwo.ca/Courses.cfm?CourseAcadCalendarID=MAIN_018802_1&SelectedCalendar=Live&ArchiveID=");
   // await getCourseInformationFromLink("https://www.westerncalendar.uwo.ca/Courses.cfm?CourseAcadCalendarID=KINGS_028261_1&SelectedCalendar=Live&ArchiveID="); // WRITING 2301
   // await getCourseInformationFromLink("https://www.westerncalendar.uwo.ca/Courses.cfm?CourseAcadCalendarID=MAIN_025898_1&SelectedCalendar=Live&ArchiveID="); // ECE 3380
-  const courseInformationData = await getCourseInformationDataForSubject(subject);
-  // const courseOfferingData = await getCourseOfferingDataForSubject(subject);
+  // const courseInformationData = await getCourseInformationDataForSubject(subject);
+  const courseOfferingData = await getCourseOfferingDataForSubject(subject);
 }
 
 main();
