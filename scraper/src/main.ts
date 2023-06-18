@@ -1,4 +1,5 @@
-// TODO: sneak Munna into here
+// PLAN: sneak Munna into here
+//       - add him as a course in the database or something
 import * as cheerio from 'cheerio';
 import axios, { AxiosRequestConfig } from "axios";
 import format from "html-format";
@@ -377,13 +378,12 @@ async function getCourseOfferingDataForSubject(subject: string) {
   const $ = await cheerio.load(pageData.data);
   const courseHeaders = await $("div.span12 > h4");
 
-  let courseOfferingData = [];
+  let subjectCourseOfferingData = [];
 
   const getTimetableDataFromTable = ($table: cheerio.Cheerio<cheerio.Element>): any => {
     const $tableBody = $table.children("tbody");
     const $tableRows = $tableBody.children("tr");
 
-    // TODO: Specify a proper return type (new interface?)
     const getRowInformation = ($tableRow: cheerio.Cheerio<cheerio.Element>) => {
       /**
        * 
@@ -391,6 +391,8 @@ async function getCourseOfferingDataForSubject(subject: string) {
        * @returns the encoded integer that represents the schedules days of the week.
        */
       const getDaysOfWeekInformation = ($daysOfWeekEntry: cheerio.Cheerio<cheerio.Element>): number => {
+        const $daysOfWeekRows = $daysOfWeekEntry.find(".daysTable > tbody > tr > td");
+        console.log($daysOfWeekEntry.toString());
         return 0;
       }
 
@@ -435,15 +437,14 @@ async function getCourseOfferingDataForSubject(subject: string) {
       };
     };
     
-    console.log("getting each row information: ", $tableRows.length);
+    const rowInformationList = [];
+
     for (let i = 0; i < $tableRows.length; ++i) {
       const rowInformation = getRowInformation($($tableRows[i]));
-      console.log(rowInformation);
+      rowInformationList.push(rowInformation);
     }
 
-    // TODO: Figure out what the return structure will be.
-    // - Probably will be a list of objects containing the information for the row
-    return [];
+    return rowInformationList;
   };
 
   /**
@@ -488,16 +489,26 @@ async function getCourseOfferingDataForSubject(subject: string) {
     //  Or do I instead only extra Extra Information from the course description?
     const courseDescription = $courseDescription.text();
 
-    console.log(`Getting row information for ${courseCode}`);
     const timetableInformation = getTimetableDataFromTable($scheduleTable);
+
+    return {
+      subjectCode,
+      courseNumber,
+      suffixes,
+      courseCode,
+      courseDescription,
+      timetableInformation,
+    };
   };
 
   for (let i = 0; i < courseHeaders.length; ++i) {
-    getCourseOfferingDataFromHeader(courseHeaders[i]);
+    const courseOfferingData = getCourseOfferingDataFromHeader(courseHeaders[i]);
+    subjectCourseOfferingData.push(courseOfferingData);
     break;
     await promiseTimeout(1);
   }
 
+  return subjectCourseOfferingData;
 }
 
 async function main() {
