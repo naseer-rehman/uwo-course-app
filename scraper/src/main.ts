@@ -6,6 +6,7 @@ import format from "html-format";
 import path, { dirname } from "path";
 import { fileURLToPath } from 'url';
 import fs from "fs";
+import { encodeWeekdayList } from "../../shared/weekdayList";
 
 interface TimetableSubjectMapping {
   [key: string]: string,
@@ -14,10 +15,6 @@ interface TimetableSubjectMapping {
 interface CourseOfferingData {
   // To be completed...
 }
-
-// Workaround for getting __dirname which isn't available readily for ESModules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 let timetableSubjectMapping: TimetableSubjectMapping = {};
 
@@ -37,10 +34,13 @@ function initializeTimetableSubjectMapping(): void {
   if (Object.keys(timetableSubjectMapping).length !== 0) {
     return;
   }
-  const subjectMappingJSONPath = path.join(__dirname, "..", "timetableSubjectMapping.json");
+  // Under the assumption that the working directory is scraper/
+  const subjectMappingJSONPath = path.join("resources", "timetableSubjectMapping.json");
   timetableSubjectMapping = JSON.parse(fs.readFileSync(subjectMappingJSONPath, "utf8"));
 }
 
+// NOTE: This function may no longer be required
+//   and the path resolution will most likely not work
 /**
  * Reads the courseCalendarSubjectMapping.json file and loads it into memory.
  * @returns 
