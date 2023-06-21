@@ -2,12 +2,11 @@
   "name": "scraper",
   "version": "1.0.0",
   "description": "",
-  "type": "module",
   "private": true,
   "main": "./src/main.ts",
   "scripts": {
     "build": "npx tsc --build",
-    "start": "node ./build/main.js",
+    "start": "node ./build/scraper/src/main.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "buildtest": "npm run build && node ./build/main.js"
   },
