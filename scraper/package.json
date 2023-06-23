@@ -8,7 +8,7 @@
     "build": "npx tsc --build",
     "start": "node ./build/scraper/src/main.js",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "buildtest": "npm run build && node ./build/main.js"
+    "buildtest": "npm run build && npm run start"
   },
   "keywords": [],
   "author": "",
