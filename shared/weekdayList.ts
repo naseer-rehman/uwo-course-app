@@ -1,4 +1,4 @@
-export enum Weekdays {
+export const enum Weekdays {
   MONDAY = "M",
   TUESDAY = "Tu",
   WEDNESDAY = "W",

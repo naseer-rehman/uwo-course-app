@@ -391,13 +391,21 @@ async function getCourseOfferingDataForSubject(subject: string) {
        * @returns the encoded integer that represents the schedules days of the week.
        */
       const getDaysOfWeekInformation = ($daysOfWeekEntry: cheerio.Cheerio<cheerio.Element>): number => {
-        const $daysOfWeekRows = $daysOfWeekEntry.find(".daysTable > tbody > tr > td");
-        console.log($daysOfWeekEntry.toString());
-        return 0;
-      }
+        const $daysOfWeekEntries = $daysOfWeekEntry.find(".daysTable > tbody > tr > td");
+        const daysOfWeek: string[] = [];
+        for (let i = 0; i < $daysOfWeekEntries.length; ++i) {
+          const entry = $($daysOfWeekEntries[i]);
+          const value = entry.text().trim();
+          const weekdayPattern = /M|Tu|W|Th|F/g;
+          if (value.match(weekdayPattern)) {
+            daysOfWeek.push(value);
+          }
+        }
+        return encodeWeekdayList(daysOfWeek);
+      };
 
       const $rowEntries = $tableRow.children("td");
-      let currentEntry = $rowEntries.first()
+      let currentEntry = $rowEntries.first();
       const nextEntry = () => { currentEntry = currentEntry.next(); };
       const getEntryText = () => currentEntry.text().trim();
       const sectionNumber = getEntryText();
