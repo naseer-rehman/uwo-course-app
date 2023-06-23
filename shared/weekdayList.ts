@@ -6,7 +6,7 @@ export enum Weekdays {
   FRIDAY = "F"
 };
 
-const WEEKDAYS = [
+const WEEKDAYS: string[] = [
   Weekdays.MONDAY, Weekdays.TUESDAY, Weekdays.WEDNESDAY, 
   Weekdays.THURSDAY, Weekdays.FRIDAY
 ];
@@ -31,7 +31,8 @@ export function encodeWeekdayList(weekdayList: string[]): EncodedWeekdayList {
   if (weekdayList.length > 5) {
     throw new Error("Weekday list provided has more than 5 items (more than weekdays in a week)");
   }
-  for (const weekday in WEEKDAYS) {
+  for (let i = 0; i < WEEKDAYS.length; ++i) {
+    const weekday = WEEKDAYS[i];
     const index = weekdayList.findIndex(item => item === weekday);
     if (index !== -1) {
       encodedWeekdayList = (encodedWeekdayList | (1 << index));
