@@ -56,7 +56,7 @@ function initializeCourseCalendarSubjectMapping(): void {
 /**
  * Turns a regular course name into a valid camelCase key for the subject mapping
  */
-const keyify = (name: string) => {
+const stringToCamelCase = (name: string) => {
   // Extract only alphabetical words
   const words = name.match(/\w+/g);
   if (words === null) {
@@ -102,7 +102,7 @@ async function generateTimetableSubjectMappingJSON(outputFileName = "timetableSu
         throw new Error("Subject option has no first child");
       }
       if ("data" in option.firstChild) {
-        mapping[keyify(option.firstChild.data)] = stripValue(option.attribs.value);
+        mapping[stringToCamelCase(option.firstChild.data)] = stripValue(option.attribs.value);
       } else {
         throw new Error("No data in firstChild of the subject option");
       }
@@ -151,6 +151,7 @@ async function getCourseCalendarPageDataForSubject(subject: string) {
  * @param subject 
  */
 async function getCourseInformationLinksForSubject(subject: string) {
+  console.log("Getting course information links for subject:", subject);
   const pageData = await getCourseCalendarPageDataForSubject(subject);
   const $ = await cheerio.load(pageData.data);
   // TODO: Maybe write some unit tests of some sort to ensure we are at least
@@ -159,6 +160,10 @@ async function getCourseInformationLinksForSubject(subject: string) {
   const anchorsForCourseInformation = $(".col-md-12 .course .panel-body > .col-xs-12 a");
   const linksForCourseInformation = [];
   const isElementOfCorrectType = (elem: cheerio.Element) => {
+    // TODO: Evaluate whether we want to restrict to courses with a link containing MAIN
+    //   indicating the course is availble on the main campus, or if we should consider any
+    //   link regardless of the campus its on, so long as its not a duplicate of a course 
+    //   already checked?
     const pattern = /Courses\.cfm\?CourseAcadCalendarID=MAIN_(.+?)&SelectedCalendar=Live&ArchiveID=/g;
     if (!("name" in elem && elem.name == "a" && "href" in elem.attribs)) return false;
     if (!elem.attribs.href.match(pattern)) return false;
@@ -224,17 +229,17 @@ async function getCourseInformationFromLink(link: string) {
     preOrCorequisitesDiv = $(courseDescriptionLabelSelection[1]);
   }
 
-  const normalNameWithCodePattern = /\w+\s+(\d+)((?:[A-Z]\/?)+)/g;
+  const normalNameWithCodePattern = /\w+\s+(\d+)((?:[A-Z]\/?)+)?/g;
   const normalNameWithCourseCode = normalNameHeader.first().text().trim();
   const courseName = courseNameHeader.first().text().trim();
 
   // this will contain the course number and the suffixes for the course
-  const normalNameWithCourseCodeMatchesList = [
-    ...normalNameWithCourseCode.matchAll(normalNameWithCodePattern)
-  ];
+  let normalNameWithCourseCodeMatchesList = Array.from(
+    normalNameWithCourseCode.matchAll(normalNameWithCodePattern)
+  );
   if (!normalNameWithCourseCodeMatchesList 
     || normalNameWithCourseCodeMatchesList.length <= 0) {
-    throw new Error("Normal name with course code did not match the pattern");
+    throw new Error(`Normal name with course code did not match the pattern. unmatched string: "${normalNameWithCourseCode}"`);
   }
   const normalNameWithCourseCodeMatches = normalNameWithCourseCodeMatchesList[0];
   
@@ -252,7 +257,8 @@ async function getCourseInformationFromLink(link: string) {
   };
 
   const courseNumber = normalNameWithCourseCodeMatches[1];
-  const validSuffixes = extractSuffixesFromListInHeader(normalNameWithCourseCodeMatches[2]);
+  const suffixesString = normalNameWithCourseCodeMatches[2] ?? "";
+  const validSuffixes = extractSuffixesFromListInHeader(suffixesString);
   const courseDescription = courseDescriptionDiv.text().trim();
   const getBoldedInformationLabelText = (set: cheerio.Cheerio<cheerio.Element> | null): string | null => {
     if (set !== null && set.length > 0) {
@@ -335,6 +341,7 @@ async function getCourseInformationFromLink(link: string) {
     subjectCode,
     courseNumber,
     // subject: "Some Subject", // TODO: Is this redundant information?
+    courseDescription,
     courseWeight,
     breadth,
     extraInformation,
@@ -353,13 +360,16 @@ async function getCourseInformationFromLink(link: string) {
  * @returns TBD
  */
 async function getCourseInformationDataForSubject(subject: string) {
+  const courseInformationData = [];
   const links = await getCourseInformationLinksForSubject(subject);
   await promiseTimeout(2);
+  console.log("Getting course information for", subject);
   for (const link of links) {
     const courseInformation = await getCourseInformationFromLink(link);
-    console.log(courseInformation);
+    courseInformationData.push(courseInformation);
     await promiseTimeout(2);
   }
+  return courseInformationData;
 }
 
 /**
@@ -519,6 +529,49 @@ async function getCourseOfferingDataForSubject(subject: string) {
   return subjectCourseOfferingData;
 }
 
+/**
+ * Obtains course information data for the provided subject and outputs the results to a file.
+ * @param subject 
+ */
+async function dumpCourseInformationDataForSubject(subject: string) {
+  const outputFileName = `course_info--${subject}.json`;
+  const outputPath = path.join("data", "course_info", outputFileName);
+  const courseInformationData = await getCourseInformationDataForSubject(subject);
+  fs.writeFileSync(outputPath, JSON.stringify(courseInformationData, null, 2));
+}
+
+/**
+ * Obtains course offering data for a subject and outputs the data to file
+ * @param subject
+ */
+async function dumpCourseOfferingDataForSubject(subject: string) {
+  const outputFileName = `course_offering--${subject}.json`;
+  const outputPath = path.join("data", "course_offering", outputFileName);
+  const courseOfferingData = await getCourseOfferingDataForSubject(subject);
+  fs.writeFileSync(outputPath, JSON.stringify(courseOfferingData, null, 2));
+}
+
+/**
+ * Obtains course information data for every subject and outputs each subject's data to its own file.
+ */
+async function dumpCourseInformationData() {
+  const subjects = Object.keys(timetableSubjectMapping);
+  for (let i = 0; i < subjects.length; ++i) {
+    const subject = subjects[i];
+    await dumpCourseInformationDataForSubject(subject);
+    await promiseTimeout(3);
+  }
+}
+
+async function dumpCourseOfferingData() {
+  const subjects = Object.keys(timetableSubjectMapping);
+  for (let i = 0; i < subjects.length; ++i) {
+    const subject = subjects[i];
+    await dumpCourseOfferingDataForSubject(subject);
+    await promiseTimeout(1);
+  }
+}
+
 async function main() {
   initializeTimetableSubjectMapping();
   const subject = "calculus";
@@ -526,7 +579,10 @@ async function main() {
   // await getCourseInformationFromLink("https://www.westerncalendar.uwo.ca/Courses.cfm?CourseAcadCalendarID=KINGS_028261_1&SelectedCalendar=Live&ArchiveID="); // WRITING 2301
   // await getCourseInformationFromLink("https://www.westerncalendar.uwo.ca/Courses.cfm?CourseAcadCalendarID=MAIN_025898_1&SelectedCalendar=Live&ArchiveID="); // ECE 3380
   // const courseInformationData = await getCourseInformationDataForSubject(subject);
-  const courseOfferingData = await getCourseOfferingDataForSubject(subject);
+  // const courseOfferingData = await getCourseInformationDataForSubject(subject);
+  // console.log(courseOfferingData);
+  await dumpCourseInformationData();
+  // await dumpCourseOfferingData();
 }
 
 main();
