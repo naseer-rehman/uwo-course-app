@@ -158,28 +158,53 @@ async function getCourseInformationLinksForSubject(subject: string) {
   //       matching all the anchor elements we need to extract the links from.
   //       Matching for more than we need isn't an issue at all.
   const anchorsForCourseInformation = $(".col-md-12 .course .panel-body > .col-xs-12 a");
-  const linksForCourseInformation = [];
+  const linksForCourseInformation = new Map();
+
+  /*
+  This function will retrieve a link for each unique course. That single link will have the first location encoded within the URL
+  and the rest of the locations can be retrieved from the page.
+  */
+  const courseIds = [];
+  const courseIdMapping = new Map();
+
+  const isLinkOfCorrectType = (link: string): boolean => {
+    const pattern = /Courses\.cfm\?CourseAcadCalendarID=[A-Z]+_(.+?)&SelectedCalendar=Live&ArchiveID=/g;
+    return !!link.match(pattern);
+  };
+
   const isElementOfCorrectType = (elem: cheerio.Element) => {
-    // TODO: Evaluate whether we want to restrict to courses with a link containing MAIN
-    //   indicating the course is availble on the main campus, or if we should consider any
-    //   link regardless of the campus its on, so long as its not a duplicate of a course 
-    //   already checked?
-    const pattern = /Courses\.cfm\?CourseAcadCalendarID=MAIN_(.+?)&SelectedCalendar=Live&ArchiveID=/g;
-    if (!("name" in elem && elem.name == "a" && "href" in elem.attribs)) return false;
-    if (!elem.attribs.href.match(pattern)) return false;
-    const matches = Array.from(elem.attribs.href.matchAll(pattern));
+    if (!("name" in elem && elem.name === "a" && "href" in elem.attribs)) return false;
+    if (!isLinkOfCorrectType(elem.attribs.href)) return false;
     return elem.firstChild && elem.firstChild.type === "text"
       && !!elem.firstChild.data.match(/More\s+Details/gi);
   };
+
+  // Grab the unique identifier for the course from the provided link
+  // of the current form
+  const getCourseIdFromLink = (link: string): string => {
+    const pattern = /Courses\.cfm\?CourseAcadCalendarID=[A-Z]+_(\d+)_\d+&SelectedCalendar=Live&ArchiveID=/g;
+    const matches = Array.from(link.matchAll(pattern));
+    if (matches.length === 0) {
+      throw new Error(`No match from courseId pattern against academic calendar link for course: "${link}"`);
+    };
+    const courseId = matches[0][1];
+    if (!courseId.match(/\d+/g)) {
+      throw new Error(`Matched courseId from academic calendar link has unexpected value: "${courseId}"`);
+    }
+    return matches[0][1];
+  };
+
   for (const elem of anchorsForCourseInformation) {
     if (isElementOfCorrectType(elem)) {
-      // Then we add the links from each of these anchor elements to a list so we can gather the data
-      linksForCourseInformation.push(
+      const courseId = getCourseIdFromLink(elem.attribs.href);
+      linksForCourseInformation.set(
+        courseId,
         `https://www.westerncalendar.uwo.ca/${elem.attribs.href}`
       );
     }
   }
-  return linksForCourseInformation;
+
+  return linksForCourseInformation.values();
 }
 
 /**
@@ -335,6 +360,37 @@ async function getCourseInformationFromLink(link: string) {
   );
   const subjectCode = getSmallLabelText(subjectCodeHeader);
 
+  // Grab locations from page
+  const getLocationFromLink = (link: string): string | null => {
+    // NOTE: I should probably look to use a single, central pattern
+    const pattern = /Courses\.cfm\?CourseAcadCalendarID=([A-Z]+)_.+?&SelectedCalendar=Live&ArchiveID=/g;
+    const matches = Array.from(link.matchAll(pattern));
+    if (matches.length === 0) {
+      return null;
+    }
+    return matches[0][1]; // first match, group 1
+  };
+  const getOtherLocations = (): string[] => {
+    const locs: string[] = [];
+    const links = $(".col-xs-12 > a");
+    for (const link of links) {
+      let loc = null;
+      if ("name" in link && link.name === "a" && "href" in link.attribs) {
+        loc = getLocationFromLink(link.attribs.href);
+      }
+      if (loc) {
+        locs.push(loc);
+      }
+    }
+    return locs;
+  }
+  const locationFromProvidedLink = getLocationFromLink(link);
+  if (!locationFromProvidedLink) {
+    throw new Error(`The location pattern does not match the course calendar link: ${link}`);
+  }
+  const locations = [locationFromProvidedLink, ...getOtherLocations()];
+
+
   return {
     name: courseName,
     courseCode: `${subjectCode} ${courseNumber}`,
@@ -348,9 +404,7 @@ async function getCourseInformationFromLink(link: string) {
     preOrCorequisites: requisiteInformation.preOrCorequisites,
     prerequisites: requisiteInformation.prerequisites,
     corequisites: requisiteInformation.corequisites,
-    // TODO: Do we even need the below property here or should another part of the app be 
-    //       responsible of determining it based on the valid suffixes? 
-    // essayCourse: false, 
+    locations,
     validSuffixes,
   };
 }
