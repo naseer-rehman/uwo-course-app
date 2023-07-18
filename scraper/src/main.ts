@@ -62,6 +62,7 @@ const stringToCamelCase = (name: string) => {
   if (words === null) {
     throw new Error(`No words found in string "${name}"`);
   }
+  words.map(word => word.toLowerCase());
   // camelCase-ify the words
   words[0] = words[0].toLowerCase();
   for (let i = 1; i < words.length; ++i) {
@@ -89,26 +90,39 @@ const stripValue = (value: string) => {
  * @param {string} outputFileName the name of the output JSON file
  */
 async function generateTimetableSubjectMappingJSON(outputFileName = "timetableSubjectMapping") {
-  const PAGE_URL = "https://studentservices.uwo.ca/secure/timetables/mastertt/ttindex.cfm";
+  const PAGE_URL = "https://www.westerncalendar.uwo.ca/Courses.cfm?SelectedCalendar=Live&ArchiveID=";
   const pageData = await axios.get(PAGE_URL);
   const $ = await cheerio.load(pageData.data);
-  const subjectOptions = await $("#inputSubject").children("option");
+  const subjectLinks = await $(".table > tbody > tr > td > a");
   const mapping: TimetableSubjectMapping = {};
+
+  const subjectPattern = /(?:\?|&)Subject=(\w+)(?:&|$)/g;
+  const linkPattern = /Courses\.cfm\?/g;
+
+  const isLinkOfCorrectType = (link: cheerio.Element): boolean => {
+    return link.tagName === "a"
+      && "href" in link.attribs
+      && !!(link.attribs.href as string).match(linkPattern);
+  };
   
-  for (let i = 0; i < subjectOptions.length; ++i) {
-    const option = subjectOptions[i];
-    if (option.attribs?.value && option.attribs.value.length > 0) {
-      if (!option.firstChild) {
-        throw new Error("Subject option has no first child");
+  console.log(`Found ${subjectLinks.length} subject links`);
+  for (let i = 0; i < subjectLinks.length; ++i) {
+    const subjectLink = subjectLinks[i];
+    if (isLinkOfCorrectType(subjectLink)) {
+      // Extract the subject code from the link's href
+      const subjectLinkHref = subjectLink.attribs.href
+      const matches = Array.from(subjectLinkHref.matchAll(subjectPattern));
+      if (matches.length === 0) {
+        throw new Error(`Could not find the subject code in the subject link: ${subjectLinkHref}`);
       }
-      if ("data" in option.firstChild) {
-        mapping[stringToCamelCase(option.firstChild.data)] = stripValue(option.attribs.value);
-      } else {
-        throw new Error("No data in firstChild of the subject option");
-      }
+      const subjectCode = matches[0][1];
+      const subjectName = $(subjectLink).text().trim();
+      mapping[stringToCamelCase(subjectName)] = subjectCode;
+    } else {
+      console.warn("Subject link is not of correct type: ", subjectLink);
     }
   }
-  fs.writeFileSync(`${outputFileName}.json`, JSON.stringify(mapping), "utf8");
+  fs.writeFileSync(`resources/${outputFileName}.json`, JSON.stringify(mapping, null, 2), "utf8");
 }
 
 /**
@@ -159,13 +173,6 @@ async function getCourseInformationLinksForSubject(subject: string) {
   //       Matching for more than we need isn't an issue at all.
   const anchorsForCourseInformation = $(".col-md-12 .course .panel-body > .col-xs-12 a");
   const linksForCourseInformation = new Map();
-
-  /*
-  This function will retrieve a link for each unique course. That single link will have the first location encoded within the URL
-  and the rest of the locations can be retrieved from the page.
-  */
-  const courseIds = [];
-  const courseIdMapping = new Map();
 
   const isLinkOfCorrectType = (link: string): boolean => {
     const pattern = /Courses\.cfm\?CourseAcadCalendarID=[A-Z]+_(.+?)&SelectedCalendar=Live&ArchiveID=/g;
