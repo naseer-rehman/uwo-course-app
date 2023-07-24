@@ -1,129 +1,15 @@
 // PLAN: sneak Munna into here
 //       - add him as a course in the database or something
-import * as cheerio from 'cheerio';
+import { Element, Cheerio, load } from 'cheerio';
 import axios, { AxiosRequestConfig } from "axios";
 import format from "html-format";
 import path, { dirname } from "path";
 import { fileURLToPath } from 'url';
 import fs from "fs";
 import { encodeWeekdayList } from "../../shared/weekdayList";
-
-interface TimetableSubjectMapping {
-  [key: string]: string,
-}
-
-interface CourseOfferingData {
-  // To be completed...
-}
-
-let timetableSubjectMapping: TimetableSubjectMapping = {};
-
-/**
- * @param time 
- * @returns a promise that resolves in the specified time
- */
-const promiseTimeout = (time: number): Promise<null> => {
-  return new Promise(resolve => setTimeout(() => resolve(null), time * 1000));
-};
-
-/**
- * Reads the timetableSubjectMapping.json file and loads it into memory.
- * @returns 
- */
-function initializeTimetableSubjectMapping(): void {
-  if (Object.keys(timetableSubjectMapping).length !== 0) {
-    return;
-  }
-  // Under the assumption that the working directory is scraper/
-  const subjectMappingJSONPath = path.join("resources", "timetableSubjectMapping.json");
-  timetableSubjectMapping = JSON.parse(fs.readFileSync(subjectMappingJSONPath, "utf8"));
-}
-
-// NOTE: This function may no longer be required
-//   and the path resolution will most likely not work
-/**
- * Reads the courseCalendarSubjectMapping.json file and loads it into memory.
- * @returns 
- */
-function initializeCourseCalendarSubjectMapping(): void {
-  if (Object.keys(timetableSubjectMapping).length !== 0) {
-    return;
-  }
-  const subjectMappingJSONPath = path.join(__dirname, "..", "courseCalendarSubjectMapping.json");
-  timetableSubjectMapping = JSON.parse(fs.readFileSync(subjectMappingJSONPath, "utf8"));
-}
-
-/**
- * Turns a regular course name into a valid camelCase key for the subject mapping
- */
-const stringToCamelCase = (name: string) => {
-  // Extract only alphabetical words
-  const words = name.match(/\w+/g);
-  if (words === null) {
-    throw new Error(`No words found in string "${name}"`);
-  }
-  words.map(word => word.toLowerCase());
-  // camelCase-ify the words
-  words[0] = words[0].toLowerCase();
-  for (let i = 1; i < words.length; ++i) {
-    words[i] = words[i].charAt(0).toUpperCase() + words[i].substring(1);
-  }
-  return words.join("");
-};
-
-/**
-   * Takes only the first "word" made up of alphanumeric characters and removes the rest of the string 
-   * @param value the string value
-   * @returns the stripped string value
-   */
-const stripValue = (value: string) => {
-  const matches = value.match(/\w+/);
-  if (matches === null) {
-    throw new Error(`Found no words in the provided string: "${value}"`);
-  }
-  return matches[0];
-};
-
-/**
- * Generates a JSON file containing mappings from subject codes used in this program
- * to a subject code used in Western's websites/applications.
- * @param {string} outputFileName the name of the output JSON file
- */
-async function generateTimetableSubjectMappingJSON(outputFileName = "timetableSubjectMapping") {
-  const PAGE_URL = "https://www.westerncalendar.uwo.ca/Courses.cfm?SelectedCalendar=Live&ArchiveID=";
-  const pageData = await axios.get(PAGE_URL);
-  const $ = await cheerio.load(pageData.data);
-  const subjectLinks = await $(".table > tbody > tr > td > a");
-  const mapping: TimetableSubjectMapping = {};
-
-  const subjectPattern = /(?:\?|&)Subject=(\w+)(?:&|$)/g;
-  const linkPattern = /Courses\.cfm\?/g;
-
-  const isLinkOfCorrectType = (link: cheerio.Element): boolean => {
-    return link.tagName === "a"
-      && "href" in link.attribs
-      && !!(link.attribs.href as string).match(linkPattern);
-  };
-  
-  console.log(`Found ${subjectLinks.length} subject links`);
-  for (let i = 0; i < subjectLinks.length; ++i) {
-    const subjectLink = subjectLinks[i];
-    if (isLinkOfCorrectType(subjectLink)) {
-      // Extract the subject code from the link's href
-      const subjectLinkHref = subjectLink.attribs.href
-      const matches = Array.from(subjectLinkHref.matchAll(subjectPattern));
-      if (matches.length === 0) {
-        throw new Error(`Could not find the subject code in the subject link: ${subjectLinkHref}`);
-      }
-      const subjectCode = matches[0][1];
-      const subjectName = $(subjectLink).text().trim();
-      mapping[stringToCamelCase(subjectName)] = subjectCode;
-    } else {
-      console.warn("Subject link is not of correct type: ", subjectLink);
-    }
-  }
-  fs.writeFileSync(`resources/${outputFileName}.json`, JSON.stringify(mapping, null, 2), "utf8");
-}
+import { toCamelCase, firstWord } from "./stringUtils";
+import { sleep } from "./sleep";
+import subjectCodes from './subjectCodes';
 
 /**
  * Obtain the course offering information for a subject.
@@ -131,13 +17,13 @@ async function generateTimetableSubjectMappingJSON(outputFileName = "timetableSu
  */
 async function getTimetablePageDataForSubject(subject:string) {
   const PAGE_URL = "https://studentservices.uwo.ca/secure/timetables/mastertt/ttindex.cfm";
-  if (timetableSubjectMapping.hasOwnProperty(subject)) {
+  if (subjectCodes.has(subject)) {
     const config: AxiosRequestConfig = {
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
       },
     };
-    const data = `subject=${timetableSubjectMapping[subject]}&Designation=Any&catalognbr=&CourseTime=All&Component=All&time=&end_time=&day=m&day=tu&day=w&day=th&day=f&LocationCode=Any&command=search`;
+    const data = `subject=${subjectCodes.get(subject)}&Designation=Any&catalognbr=&CourseTime=All&Component=All&time=&end_time=&day=m&day=tu&day=w&day=th&day=f&LocationCode=Any&command=search`;
     const pageData = await axios.post(PAGE_URL, data, config);
     return pageData;
   } else {
@@ -150,10 +36,10 @@ async function getTimetablePageDataForSubject(subject:string) {
  * @param subject 
  */
 async function getCourseCalendarPageDataForSubject(subject: string) {
-  if (!(subject in timetableSubjectMapping)) {
+  if (!(subjectCodes.has(subject))) {
     throw new Error("Invalid subject");
   }
-  const timetableSubjectCode = timetableSubjectMapping[subject];
+  const timetableSubjectCode = subjectCodes.get(subject);
   const PAGE_URL = `https://www.westerncalendar.uwo.ca/Courses.cfm?Subject=${timetableSubjectCode}&SelectedCalendar=Live&ArchiveID=`;
   const pageData = await axios.get(PAGE_URL);
   return pageData;
@@ -167,7 +53,7 @@ async function getCourseCalendarPageDataForSubject(subject: string) {
 async function getCourseInformationLinksForSubject(subject: string) {
   console.log("Getting course information links for subject:", subject);
   const pageData = await getCourseCalendarPageDataForSubject(subject);
-  const $ = await cheerio.load(pageData.data);
+  const $ = await load(pageData.data);
   // TODO: Maybe write some unit tests of some sort to ensure we are at least
   //       matching all the anchor elements we need to extract the links from.
   //       Matching for more than we need isn't an issue at all.
@@ -179,7 +65,7 @@ async function getCourseInformationLinksForSubject(subject: string) {
     return !!link.match(pattern);
   };
 
-  const isElementOfCorrectType = (elem: cheerio.Element) => {
+  const isElementOfCorrectType = (elem: Element) => {
     if (!("name" in elem && elem.name === "a" && "href" in elem.attribs)) return false;
     if (!isLinkOfCorrectType(elem.attribs.href)) return false;
     return elem.firstChild && elem.firstChild.type === "text"
@@ -226,7 +112,7 @@ async function getCourseInformationFromLink(link: string) {
     console.log(error.toJSON());
   }
   if (!pageData) return;
-  const $ = cheerio.load(pageData.data);
+  const $ = load(pageData.data);
   // Selections for each element we need to extract information from
   // Not sure what else to call this and I don't have time to think
   const normalNameHeader = $("#CourseInformationDiv > div.col-md-12:first-of-type > h2");
@@ -241,7 +127,7 @@ async function getCourseInformationFromLink(link: string) {
   const subjectCodeHeader = $("#CourseInformationDiv > .col-xs-12:last-of-type > h5:nth-child(3)");
 
   /* Contains logic to assert we get matches for the selections above, might use, might not.
-  const assertNonEmptySets = (...args: cheerio.Cheerio<cheerio.Element>[]) => {
+  const assertNonEmptySets = (...args: Cheerio<Element>[]) => {
     const areNonEmpty = args.reduce((prev, item) => (prev && item.length > 0), true);
     if (areNonEmpty === false) 
       throw new Error("At least one selection from course calendar page did not get a match");
@@ -256,7 +142,7 @@ async function getCourseInformationFromLink(link: string) {
   */
   
   const courseDescriptionDiv = $(courseDescriptionLabelSelection[0]);
-  let preOrCorequisitesDiv: cheerio.Cheerio<cheerio.Element> | null = null;
+  let preOrCorequisitesDiv: Cheerio<Element> | null = null;
   if (courseDescriptionLabelSelection.length > 1) {
     preOrCorequisitesDiv = $(courseDescriptionLabelSelection[1]);
   }
@@ -292,7 +178,7 @@ async function getCourseInformationFromLink(link: string) {
   const suffixesString = normalNameWithCourseCodeMatches[2] ?? "";
   const validSuffixes = extractSuffixesFromListInHeader(suffixesString);
   const courseDescription = courseDescriptionDiv.text().trim();
-  const getBoldedInformationLabelText = (set: cheerio.Cheerio<cheerio.Element> | null): string | null => {
+  const getBoldedInformationLabelText = (set: Cheerio<Element> | null): string | null => {
     if (set !== null && set.length > 0) {
       return set.text().trim();
     }
@@ -335,7 +221,7 @@ async function getCourseInformationFromLink(link: string) {
   };
   const requisiteInformation = extractRequisiteInformation(requisiteInformationText);
   const extraInformation = getBoldedInformationLabelText(extraInformationContainer);
-  const getSmallLabelText = (set: cheerio.Cheerio<cheerio.Element> | null): string | null => {
+  const getSmallLabelText = (set: Cheerio<Element> | null): string | null => {
     if (set !== null && set.length > 0) {
       const header = set[0];
       if (header.children.length < 2) {
@@ -423,12 +309,12 @@ async function getCourseInformationFromLink(link: string) {
 async function getCourseInformationDataForSubject(subject: string) {
   const courseInformationData = [];
   const links = await getCourseInformationLinksForSubject(subject);
-  await promiseTimeout(2);
+  await sleep(2);
   console.log("Getting course information for", subject);
   for (const link of links) {
     const courseInformation = await getCourseInformationFromLink(link);
     courseInformationData.push(courseInformation);
-    await promiseTimeout(2);
+    await sleep(2);
   }
   return courseInformationData;
 }
@@ -440,28 +326,28 @@ async function getCourseInformationDataForSubject(subject: string) {
 async function getCourseOfferingDataForSubject(subject: string) {
   const courseHeaderRegex = /(([A-Z]+\s*\d+)([A-Z]*))\s*-\s*(.+)/;
 
-  if (subject in timetableSubjectMapping === false) {
+  if (subjectCodes.has(subject) === false) {
     throw new Error("Invalid subject");
   }
 
-  const subjectCode = timetableSubjectMapping[subject];
+  const subjectCode = subjectCodes.get(subject);
   const pageData = await getTimetablePageDataForSubject(subject);
-  const $ = await cheerio.load(pageData.data);
+  const $ = await load(pageData.data);
   const courseHeaders = await $("div.span12 > h4");
 
   let subjectCourseOfferingData = [];
 
-  const getTimetableDataFromTable = ($table: cheerio.Cheerio<cheerio.Element>): any => {
+  const getTimetableDataFromTable = ($table: Cheerio<Element>): any => {
     const $tableBody = $table.children("tbody");
     const $tableRows = $tableBody.children("tr");
 
-    const getRowInformation = ($tableRow: cheerio.Cheerio<cheerio.Element>) => {
+    const getRowInformation = ($tableRow: Cheerio<Element>) => {
       /**
        * 
        * @param $daysOfWeekEntry the `td` element that contains the table with the schedules days of the week
        * @returns the encoded integer that represents the schedules days of the week.
        */
-      const getDaysOfWeekInformation = ($daysOfWeekEntry: cheerio.Cheerio<cheerio.Element>): number => {
+      const getDaysOfWeekInformation = ($daysOfWeekEntry: Cheerio<Element>): number => {
         const $daysOfWeekEntries = $daysOfWeekEntry.find(".daysTable > tbody > tr > td");
         const daysOfWeek: string[] = [];
         for (let i = 0; i < $daysOfWeekEntries.length; ++i) {
@@ -532,7 +418,7 @@ async function getCourseOfferingDataForSubject(subject: string) {
    * @param selector css selector
    * @returns the next sibling element that matches the selector
    */
-  const getNextMatchingSibling = (element: cheerio.Cheerio<cheerio.Element>, selector: string): cheerio.Cheerio<cheerio.Element> | null => { 
+  const getNextMatchingSibling = (element: Cheerio<Element>, selector: string): Cheerio<Element> | null => { 
     let nextSibling = element.next();
     while (nextSibling && nextSibling.is(selector) === false) {
       nextSibling = nextSibling.next();
@@ -543,7 +429,7 @@ async function getCourseOfferingDataForSubject(subject: string) {
     return nextSibling;
   };
 
-  const getCourseOfferingDataFromHeader = (header: cheerio.Element) => {
+  const getCourseOfferingDataFromHeader = (header: Element) => {
     const $header = $(header);
     const $courseDescription = $header.next("p");
     const $scheduleTable = getNextMatchingSibling($header, "table");
@@ -584,7 +470,7 @@ async function getCourseOfferingDataForSubject(subject: string) {
     const courseOfferingData = getCourseOfferingDataFromHeader(courseHeaders[i]);
     subjectCourseOfferingData.push(courseOfferingData);
     break;
-    await promiseTimeout(1);
+    await sleep(1);
   }
 
   return subjectCourseOfferingData;
@@ -616,25 +502,24 @@ async function dumpCourseOfferingDataForSubject(subject: string) {
  * Obtains course information data for every subject and outputs each subject's data to its own file.
  */
 async function dumpCourseInformationData() {
-  const subjects = Object.keys(timetableSubjectMapping);
+  const subjects = subjectCodes.getAllKeys();
   for (let i = 0; i < subjects.length; ++i) {
     const subject = subjects[i];
     await dumpCourseInformationDataForSubject(subject);
-    await promiseTimeout(3);
+    await sleep(1);
   }
 }
 
 async function dumpCourseOfferingData() {
-  const subjects = Object.keys(timetableSubjectMapping);
+  const subjects = subjectCodes.getAllKeys();
   for (let i = 0; i < subjects.length; ++i) {
     const subject = subjects[i];
     await dumpCourseOfferingDataForSubject(subject);
-    await promiseTimeout(1);
+    await sleep(1);
   }
 }
 
 async function main() {
-  initializeTimetableSubjectMapping();
   const subject = "calculus";
   // const courseInformation = await getCourseInformationFromLink("https://www.westerncalendar.uwo.ca/Courses.cfm?CourseAcadCalendarID=MAIN_018802_1&SelectedCalendar=Live&ArchiveID=");
   // await getCourseInformationFromLink("https://www.westerncalendar.uwo.ca/Courses.cfm?CourseAcadCalendarID=KINGS_028261_1&SelectedCalendar=Live&ArchiveID="); // WRITING 2301
