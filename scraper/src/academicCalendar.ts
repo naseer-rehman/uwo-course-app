@@ -5,6 +5,30 @@ import sleep from "./sleep";
 import path from "path";
 import fs from "fs";
 
+// TODO:
+//  - write a function to obtain information for a single course
+//  - write a function to obtain information for a collection of courses
+//    - that match some sort of pattern or condition?
+//  - write a function to "soft update" courses:
+//    - entire file is not overwritten, only additions/edits are made to the file without deleting courses
+
+// RESEARCH:
+//  - research the unique(?) id in the url for a course's academic calendar page
+//    - Example: 
+//        westerncalendar.uwo.ca.....CourseAcadCalendarID=MAIN_022436_1&....
+//      where the ID is: 022436
+//  - do we want a function that can parse the data files?
+//    - allowing edits or to calculate stuff with it
+//    - yes cuz we need to upload to database
+//  - look into using dependency injection for gathering data about courses?
+//  - figure out when we want to replace an entire subject file vs. only updating the courses we need to update
+//    - especially required for making updates to existing courses to the database
+//    - do we assume that every course might have received an update?
+//      - so in this case, we need to rescrape every course and then run a diff check between the new data 
+//        and what's in the json
+//  - do we want to do scraper -> local json files -> upload to database
+//    or do we scraper -> upload to database directly?
+
 /**
  * Obtains the academic calendar page data for the provided subject, which includes
  * a list of all courses under the subject where each entry has a link to the
@@ -75,7 +99,6 @@ async function getCourseInformationLinksForSubject(subject: string) {
 
   return linksForCourseInformation.values();
 }
-
 
 /**
  * Retrieves all the information of a course from its information page provided as a link.
@@ -262,6 +285,7 @@ export async function getCourseInformationFromLink(link: string) {
 
 
   return {
+    link,
     name: courseName,
     courseCode: `${subjectCode} ${courseNumber}`,
     subjectCode,
@@ -278,7 +302,6 @@ export async function getCourseInformationFromLink(link: string) {
     validSuffixes,
   };
 }
-
 
 /**
  * Get the information for all courses for a subject offered by Western.
