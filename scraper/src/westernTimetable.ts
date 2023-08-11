@@ -199,6 +199,6 @@ export async function dumpCourseOfferingData() {
   for (let i = 0; i < subjects.length; ++i) {
     const subject = subjects[i];
     await dumpCourseOfferingDataForSubject(subject);
-    await sleep(1);
+    await sleep(2);
   }
 }

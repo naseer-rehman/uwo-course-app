@@ -2,7 +2,7 @@ import path from "path";
 import fs from "fs";
 import axios from "axios";
 import { load } from "cheerio";
-import { toCamelCase, firstWord } from "./stringUtils";
+import { toCamelCase, firstWord } from "./utils/stringUtils";
 
 interface SubjectMappingObject {
   [key: string]: string,

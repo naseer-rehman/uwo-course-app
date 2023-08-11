@@ -7,7 +7,7 @@ import path, { dirname } from "path";
 import { fileURLToPath } from 'url';
 import fs from "fs";
 import { encodeWeekdayList } from "../../shared/weekdayList";
-import { toCamelCase, firstWord } from "./stringUtils";
+import { toCamelCase, firstWord } from "./utils/stringUtils";
 import sleep from "./sleep";
 import subjectCodes from './subjectCodes';
 import { dumpCourseInformationData } from "./academicCalendar";
