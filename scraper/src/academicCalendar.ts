@@ -1,11 +1,14 @@
-import { load, Element, Cheerio } from "cheerio";
+import { load } from "cheerio";
+import * as cheerio from "cheerio";
+import type { Cheerio } from "cheerio";
 import subjectCodes from "./subjectCodes";
-import axios from "axios";
 import sleep from "./sleep";
 import path from "path";
 import fs from "fs";
 
 // TODO:
+//  - plan out which pieces of information to extract
+//    - revisit the database diagram
 //  - write a function to obtain information for a single course
 //  - write a function to obtain information for a collection of courses
 //    - that match some sort of pattern or condition?
@@ -30,9 +33,98 @@ import fs from "fs";
 //    or do we scraper -> upload to database directly?
 
 /**
+ * A function that scrapes all the subjects from table in the Western academic calendar.
+ * @returns a list of objects each containing a subject's information
+ */
+export async function gatherSubjects() {
+  const SUBJECT_LIST_PAGE_LINK_BASE = new URL("https://www.westerncalendar.uwo.ca");
+  const SUBJECT_LIST_PAGE_LINK = new URL(
+    "https://www.westerncalendar.uwo.ca/Courses.cfm?SelectedCalendar=Live&ArchiveID="
+  );
+  const SUBJECT_LINK_SELECTOR = 
+    "table > tbody > tr > td > a";
+  const $ = await cheerio.fromURL(SUBJECT_LIST_PAGE_LINK);
+
+  // Black magic for getting the `Element` type from Cheerio
+  type GetElement<T> = T extends cheerio.Cheerio<infer U> ? U : never;
+  const getSubjectParamFromElement = (linkElement: GetElement<ReturnType<typeof $>>) => {
+    const hrefValue = $(linkElement).prop("href");
+    if (!hrefValue) return null;
+    const subjectParam = new URL(hrefValue, SUBJECT_LIST_PAGE_LINK_BASE).searchParams.get("Subject");
+    if (subjectParam === null || subjectParam.length <= 0)
+      return null;
+    return subjectParam;
+  };
+  
+  const links = $(SUBJECT_LINK_SELECTOR);
+  const tables = $("table")
+    .filter((_, el) => {
+      const table = $(el);
+      const tableHeaders = table.first().find("> thead > tr > th");
+      const headersMatched = {
+        subject: false,
+        breadthCategory: false,
+        campuses: false,
+      };
+      tableHeaders.each((_, el) => {
+        const headerText = $(el).text().toLowerCase().trim();
+        if (headerText.match(/subject/gi)) {
+          headersMatched.subject = true;
+        } else if (headerText.match(/breadth category/gi)) {
+          headersMatched.breadthCategory = true;
+        } else if (headerText.match(/campuses/gi)) {
+          headersMatched.campuses = true;  
+        }
+      });
+      return headersMatched.subject && headersMatched.breadthCategory && headersMatched.campuses;
+    });
+  if (tables.length < 1) {
+    throw new Error("Can't find the table containing the list of all subjects");
+  }
+
+  const filteredLinks = links.filter((i, el) => {
+      return getSubjectParamFromElement(el) !== null;
+    });
+  const subjects: Record<string, string>[] = [];
+  
+  filteredLinks.each((_, el) => {
+    const subjectParam = getSubjectParamFromElement(el);
+    if (subjectParam === null)
+      throw Error("Subject parameter is nonexistent despite filtering!");
+
+    const subject: Record<string, string> = {};
+    subject.code = subjectParam;
+
+    const linkElement = $(el);
+    const firstChildText = linkElement.first().text();
+    subject.name = firstChildText;
+
+    const breadthCategoryCell = linkElement.parent().next();
+    const breadthCategoriesText = breadthCategoryCell.text();
+    // Cleaning up the breadth categories
+    const getBreadthCategories = (unfilteredCategories: string) => {
+      // Assumes the text in the cell is written as:
+      // CATEGORY A CATEGORY B ...
+      const categories = [];
+      const regex = /CATEGORY ([ABC])/g;
+      const matches = unfilteredCategories.matchAll(regex).toArray();
+      for (let match of matches) {
+        categories.push(match[1]);
+      }
+      categories.sort();
+      return categories.join("");
+    };
+    subject.breadth_category = getBreadthCategories(breadthCategoriesText);
+
+    subjects.push(subject);
+  });
+  return subjects;
+}
+
+/**
  * Obtains the academic calendar page data for the provided subject, which includes
- * a list of all courses under the subject where each entry has a link to the
- * course information page for that subject.
+ * a list of all courses under the subject, where each entry has a link to the
+ * course information page.
  * @param subject 
  */
 async function getCourseCalendarPageDataForSubject(subject: string) {
@@ -40,9 +132,17 @@ async function getCourseCalendarPageDataForSubject(subject: string) {
     throw new Error("Invalid subject");
   }
   const timetableSubjectCode = subjectCodes.get(subject);
-  const PAGE_URL = `https://www.westerncalendar.uwo.ca/Courses.cfm?Subject=${timetableSubjectCode}&SelectedCalendar=Live&ArchiveID=`;
-  const pageData = await axios.get(PAGE_URL);
-  return pageData;
+
+  const PAGE_URL = new URL("https://www.westerncalendar.uwo.ca/Courses.cfm");
+  PAGE_URL.searchParams.set("Subject", subject);
+  PAGE_URL.searchParams.set("SelectedCalendar", "Live");
+  PAGE_URL.searchParams.set("ArchiveID", "");
+  const response = await fetch(PAGE_URL);
+  if (!response.ok) {
+    throw new Error("Could not retrieve page data for subject's listed courses.");
+  }
+  // TODO: Test to see if this returns the actual HTML from the page.
+  return await response.text();
 }
 
 /**
@@ -53,7 +153,7 @@ async function getCourseCalendarPageDataForSubject(subject: string) {
 async function getCourseInformationLinksForSubject(subject: string) {
   console.log("Getting course information links for subject:", subject);
   const pageData = await getCourseCalendarPageDataForSubject(subject);
-  const $ = await load(pageData.data);
+  const $ = await load(pageData);
   // TODO: Maybe write some unit tests of some sort to ensure we are at least
   //       matching all the anchor elements we need to extract the links from.
   //       Matching for more than we need isn't an issue at all.
@@ -65,7 +165,8 @@ async function getCourseInformationLinksForSubject(subject: string) {
     return !!link.match(pattern);
   };
 
-  const isElementOfCorrectType = (elem: Element) => {
+
+  const isElementOfCorrectType = (elem: cheerio.Cheerio<T>) => {
     if (!("name" in elem && elem.name === "a" && "href" in elem.attribs)) return false;
     if (!isLinkOfCorrectType(elem.attribs.href)) return false;
     return elem.firstChild && elem.firstChild.type === "text"
@@ -336,8 +437,7 @@ export async function dumpCourseInformationDataForSubject(subject: string) {
  */
 export async function dumpCourseInformationData() {
   const subjects = subjectCodes.getAllKeys();
-  for (let i = 0; i < subjects.length; ++i) {
-    const subject = subjects[i];
+  for (const subject of subjects) {
     await dumpCourseInformationDataForSubject(subject);
     await sleep(1);
   }

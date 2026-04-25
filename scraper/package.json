@@ -1,25 +1,24 @@
 {
   "name": "scraper",
-  "version": "1.0.0",
-  "description": "",
+  "module": "./src/main.ts",
+  "type": "module",
   "private": true,
-  "main": "./src/main.ts",
   "scripts": {
-    "build": "npx tsc --build",
-    "start": "node ./build/scraper/src/main.js",
+    "build": "",
+    "start": "",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "buildtest": "npm run build && npm run start"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "dependencies": {
-    "axios": "^1.3.4",
-    "cheerio": "^1.0.0-rc.12",
-    "html-format": "^1.1.2"
+    "buildtest": "bun build --outdir=build --target=node --sourcemap src/main.ts && bun run build/main.js"
   },
   "devDependencies": {
-    "@types/node": "^18.16.1",
-    "typescript": "^5.0.4"
+    "@types/axios": "^0.14.4",
+    "@types/bun": "^1.3.9",
+    "@types/cheerio": "^1.0.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "cheerio": "^1.2.0",
+    "html-format": "^1.1.7"
   }
 }

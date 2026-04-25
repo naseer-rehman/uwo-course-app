@@ -1,12 +1,11 @@
 import path from "path";
 import fs from "fs";
-import axios from "axios";
-import { load } from "cheerio";
+import * as cheerio from "cheerio";
 import { toCamelCase, firstWord } from "./utils/stringUtils";
 
 interface SubjectMappingObject {
   [key: string]: string,
-}
+};
 
 const subjectMappingJSONPath = path.join(
   "resources", "timetableSubjectMapping.json"
@@ -16,32 +15,34 @@ let subjectMapping: SubjectMappingObject = JSON.parse(
   fs.readFileSync(subjectMappingJSONPath, "utf8")
 );
 
+async function getTimetableSubjectMapping() {
+  const PAGE_URL = "https://studentservices.uwo.ca/secure/timetables/mastertt/ttindex.cfm";
+  const $ = await cheerio.fromURL(PAGE_URL);
+  const subjectOptions = await $("#inputSubject").children("option");
+  const mapping: SubjectMappingObject = {};
+
+  for (const optionElement of subjectOptions) {
+    const option = await $(optionElement);
+    const optionValue = option.attr("value");
+    if (optionValue && optionValue.length > 0) {
+      const optionText = option.prop("innerText");
+      if (!optionText) {
+        throw new Error("Subject option does not have inner text");
+      }
+      mapping[toCamelCase(optionText)] = firstWord(optionValue);
+    }
+  }
+  return mapping;
+}
+
 /**
  * Generates a JSON file containing mappings from subject codes used in this program
  * to a subject code used in Western's websites/applications.
  * @param {string} outputFileName the name of the output JSON file
  */
 async function generateTimetableSubjectMappingJSON(outputFileName = "timetableSubjectMapping") {
-  const PAGE_URL = "https://studentservices.uwo.ca/secure/timetables/mastertt/ttindex.cfm";
-  const pageData = await axios.get(PAGE_URL);
-  const $ = await load(pageData.data);
-  const subjectOptions = await $("#inputSubject").children("option");
-  const mapping: SubjectMappingObject = {};
-  
-  for (let i = 0; i < subjectOptions.length; ++i) {
-    const option = subjectOptions[i];
-    if (option.attribs?.value && option.attribs.value.length > 0) {
-      if (!option.firstChild) {
-        throw new Error("Subject option has no first child");
-      }
-      if ("data" in option.firstChild) {
-        mapping[toCamelCase(option.firstChild.data)] = firstWord(option.attribs.value);
-      } else {
-        throw new Error("No data in firstChild of the subject option");
-      }
-    }
-  }
-  fs.writeFileSync(`${outputFileName}.json`, JSON.stringify(mapping), "utf8");
+  const updatedSubjectMapping = await getTimetableSubjectMapping();
+  fs.writeFileSync(`${outputFileName}.json`, JSON.stringify(updatedSubjectMapping), "utf8");
 }
 
 function has(key: string): boolean {
@@ -53,7 +54,10 @@ function hasFromName(key: string): boolean {
 }
 
 function get(key: string): string | null {
-  return has(key) ? subjectMapping[key] : null;
+  if (!has(key)) return null;
+  const val = subjectMapping[key];
+  if (!val) throw Error("Subject mapping has key but falsey value?");
+  return val;
 }
 
 function getFromName(name: string): string | null {

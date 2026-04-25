@@ -1,6 +1,6 @@
-import { load, Element, Cheerio } from "cheerio";
+import { load } from "cheerio";
+import type { Cheerio } from "cheerio";
 import subjectCodes from "./subjectCodes";
-import axios, { AxiosRequestConfig } from "axios";
 import sleep from "./sleep";
 import path from "path";
 import fs from "fs";
@@ -148,10 +148,14 @@ export async function getCourseOfferingDataForSubject(subject: string) {
     const courseHeaderMatches = Array.from(
       $header.text().matchAll(courseHeaderPattern)
     );
-    if (!courseHeaderMatches || courseHeaderMatches.length <= 0) {
+    const courseHeaderMatch = courseHeaderMatches[0];
+
+    const foundNoMatches = !courseHeaderMatches || courseHeaderMatches.length <= 0;
+    const receivedUndefinedMatches = courseHeaderMatch === undefined || courseHeaderMatch?.length < 4;
+    if (foundNoMatches || receivedUndefinedMatches) {
       throw new Error("Unable to match course offering header");
     }
-    const courseHeaderMatch = courseHeaderMatches[0];
+
     const subjectCode = courseHeaderMatch[1];
     const courseNumber = courseHeaderMatch[2];
     const suffixes = courseHeaderMatch[3];
@@ -196,8 +200,7 @@ export async function dumpCourseOfferingDataForSubject(subject: string) {
 
 export async function dumpCourseOfferingData() {
   const subjects = subjectCodes.getAllKeys();
-  for (let i = 0; i < subjects.length; ++i) {
-    const subject = subjects[i];
+  for (const subject of subjects) {
     await dumpCourseOfferingDataForSubject(subject);
     await sleep(2);
   }

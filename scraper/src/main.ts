@@ -1,7 +1,8 @@
-// PLAN: sneak Munna into here
+// PLAN: sneak Munna in here
 //       - add him as a course in the database or something
-import { Element, Cheerio, load } from 'cheerio';
-import axios, { AxiosRequestConfig } from "axios";
+import { load } from "cheerio";
+import * as cheerio from "cheerio";
+import type { Cheerio } from "cheerio";
 import format from "html-format";
 import path, { dirname } from "path";
 import { fileURLToPath } from 'url';
@@ -10,7 +11,7 @@ import { encodeWeekdayList } from "../../shared/weekdayList";
 import { toCamelCase, firstWord } from "./utils/stringUtils";
 import sleep from "./sleep";
 import subjectCodes from './subjectCodes';
-import { dumpCourseInformationData } from "./academicCalendar";
+import { dumpCourseInformationData, gatherSubjects } from "./academicCalendar";
 import { dumpCourseOfferingData } from './westernTimetable';
 
 async function main() {
@@ -21,8 +22,10 @@ async function main() {
   // const courseInformationData = await getCourseInformationDataForSubject(subject);
   // const courseOfferingData = await getCourseInformationDataForSubject(subject);
   // console.log(courseOfferingData);
-  dumpCourseInformationData();
+  // dumpCourseInformationData();
   // dumpCourseOfferingData();
+  // subjectCodes.generateMappingFile();
+  console.log(await gatherSubjects());
 }
 
 main();

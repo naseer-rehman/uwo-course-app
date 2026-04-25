@@ -10,7 +10,9 @@ export const toCamelCase = (string: string) => {
   // camelCase-ify the words
   words[0] = words[0].toLowerCase();
   for (let i = 1; i < words.length; ++i) {
-    words[i] = words[i].charAt(0).toUpperCase() + words[i].substring(1);
+    const word = words[i];
+    if (word === undefined) throw new Error("Undefined match in string (this shouldn't happen)");
+    words[i] = word.charAt(0).toUpperCase() + word.substring(1);
   }
   return words.join("");
 };
