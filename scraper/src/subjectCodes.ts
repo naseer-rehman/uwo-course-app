@@ -2,6 +2,7 @@ import path from "path";
 import fs from "fs";
 import * as cheerio from "cheerio";
 import { toCamelCase, firstWord } from "./utils/stringUtils";
+import { gatherSubjects } from "./academicCalendar";
 
 interface SubjectMappingObject {
   [key: string]: string,
@@ -16,21 +17,11 @@ let subjectMapping: SubjectMappingObject = JSON.parse(
 );
 
 async function getTimetableSubjectMapping() {
-  const PAGE_URL = "https://studentservices.uwo.ca/secure/timetables/mastertt/ttindex.cfm";
-  const $ = await cheerio.fromURL(PAGE_URL);
-  const subjectOptions = await $("#inputSubject").children("option");
   const mapping: SubjectMappingObject = {};
+  const subjects = await gatherSubjects();
 
-  for (const optionElement of subjectOptions) {
-    const option = await $(optionElement);
-    const optionValue = option.attr("value");
-    if (optionValue && optionValue.length > 0) {
-      const optionText = option.prop("innerText");
-      if (!optionText) {
-        throw new Error("Subject option does not have inner text");
-      }
-      mapping[toCamelCase(optionText)] = firstWord(optionValue);
-    }
+  for (const subject of subjects) {
+    mapping[toCamelCase(subject.name)] = subject.code;
   }
   return mapping;
 }

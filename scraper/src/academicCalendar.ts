@@ -32,6 +32,12 @@ import fs from "fs";
 //  - do we want to do scraper -> local json files -> upload to database
 //    or do we scraper -> upload to database directly?
 
+interface Subject { 
+  code: string,
+  name: string,
+  breadth_category: string,
+};
+
 /**
  * A function that scrapes all the subjects from table in the Western academic calendar.
  * @returns a list of objects each containing a subject's information
@@ -85,14 +91,14 @@ export async function gatherSubjects() {
   const filteredLinks = links.filter((i, el) => {
       return getSubjectParamFromElement(el) !== null;
     });
-  const subjects: Record<string, string>[] = [];
+  const subjects: Subject[] = [];
   
   filteredLinks.each((_, el) => {
     const subjectParam = getSubjectParamFromElement(el);
     if (subjectParam === null)
       throw Error("Subject parameter is nonexistent despite filtering!");
 
-    const subject: Record<string, string> = {};
+    const subject: Subject = { code: "", name: "", breadth_category: "" };
     subject.code = subjectParam;
 
     const linkElement = $(el);
@@ -128,11 +134,10 @@ export async function gatherSubjects() {
  * @param subject 
  */
 async function getCourseCalendarPageDataForSubject(subject: string) {
-  if (!(subjectCodes.has(subject))) {
-    throw new Error("Invalid subject");
-  }
-  const timetableSubjectCode = subjectCodes.get(subject);
-
+  // TODO: Add in subject matching
+  // if (!(subjectCodes.has(subject))) {
+  //   throw new Error("Invalid subject");
+  // }
   const PAGE_URL = new URL("https://www.westerncalendar.uwo.ca/Courses.cfm");
   PAGE_URL.searchParams.set("Subject", subject);
   PAGE_URL.searchParams.set("SelectedCalendar", "Live");
@@ -165,35 +170,40 @@ async function getCourseInformationLinksForSubject(subject: string) {
     return !!link.match(pattern);
   };
 
-
-  const isElementOfCorrectType = (elem: cheerio.Cheerio<T>) => {
-    if (!("name" in elem && elem.name === "a" && "href" in elem.attribs)) return false;
-    if (!isLinkOfCorrectType(elem.attribs.href)) return false;
-    return elem.firstChild && elem.firstChild.type === "text"
-      && !!elem.firstChild.data.match(/More\s+Details/gi);
+  const isElementOfCorrectType = (elem: cheerio.Cheerio<any>) => {
+    const isLink = elem.prop("tagName")?.toLowerCase() === "a";
+    const hasHref = elem.attr("href") !== undefined;
+    if (!isLink || !hasHref) return false;
+    if (!isLinkOfCorrectType(elem.attr("href") ?? "")) return false;
+    const textValue = elem.first().contents()
+      .filter((_, el) => el.type === "text").text();
+    return textValue.match(/More\s+Details/gi);
   };
 
   // Grab the unique identifier for the course from the provided link
   // of the current form
   const getCourseIdFromLink = (link: string): string => {
     const pattern = /Courses\.cfm\?CourseAcadCalendarID=[A-Z]+_(\d+)_\d+&SelectedCalendar=Live&ArchiveID=/g;
-    const matches = Array.from(link.matchAll(pattern));
+    const matches = link.matchAll(pattern).toArray();
     if (matches.length === 0) {
       throw new Error(`No match from courseId pattern against academic calendar link for course: "${link}"`);
     };
-    const courseId = matches[0][1];
+    const firstMatch = matches[0];
+    if (!firstMatch) throw new Error("Undefined first match from list of regex matches");
+    const courseId = firstMatch[1] ?? "";
     if (!courseId.match(/\d+/g)) {
       throw new Error(`Matched courseId from academic calendar link has unexpected value: "${courseId}"`);
     }
-    return matches[0][1];
+    return courseId;
   };
 
   for (const elem of anchorsForCourseInformation) {
-    if (isElementOfCorrectType(elem)) {
-      const courseId = getCourseIdFromLink(elem.attribs.href);
+    const wrappedElem = $(elem);
+    if (isElementOfCorrectType(wrappedElem)) {
+      const courseId = getCourseIdFromLink(wrappedElem.attr("href") ?? "");
       linksForCourseInformation.set(
         courseId,
-        `https://www.westerncalendar.uwo.ca/${elem.attribs.href}`
+        `https://www.westerncalendar.uwo.ca/${wrappedElem.attr("href")}`
       );
     }
   }

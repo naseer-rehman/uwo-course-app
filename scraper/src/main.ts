@@ -11,7 +11,7 @@ import { encodeWeekdayList } from "../../shared/weekdayList";
 import { toCamelCase, firstWord } from "./utils/stringUtils";
 import sleep from "./sleep";
 import subjectCodes from './subjectCodes';
-import { dumpCourseInformationData, gatherSubjects } from "./academicCalendar";
+import { dumpCourseInformationData } from "./academicCalendar";
 import { dumpCourseOfferingData } from './westernTimetable';
 
 async function main() {
@@ -25,7 +25,7 @@ async function main() {
   // dumpCourseInformationData();
   // dumpCourseOfferingData();
   // subjectCodes.generateMappingFile();
-  console.log(await gatherSubjects());
+  // console.log(await getCourseInformationLinksForSubject("WRITING"));
 }
 
 main();
