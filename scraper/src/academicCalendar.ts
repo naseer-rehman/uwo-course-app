@@ -1,6 +1,6 @@
 import { load } from "cheerio";
 import * as cheerio from "cheerio";
-import type { Cheerio } from "cheerio";
+import type { Cheerio, CheerioAPI } from "cheerio";
 import subjectCodes from "./subjectCodes";
 import sleep from "./sleep";
 import path from "path";
@@ -213,19 +213,22 @@ async function getCourseInformationLinksForSubject(subject: string) {
 
 /**
  * Retrieves all the information of a course from its information page provided as a link.
+ * Links should be of the form: 
+ * https://www.westerncalendar.uwo.ca/Courses.cfm?CourseAcadCalendarID=MAIN_016882_1&SelectedCalendar=Live&ArchiveID=
+ * https://www.westerncalendar.uwo.ca/Courses.cfm?CourseAcadCalendarID=MAIN_020938_1&SelectedCalendar=Live&ArchiveID=
  * @param link 
  */
 export async function getCourseInformationFromLink(link: string) {
   let pageData = null;
   try {
-    pageData = await axios.get(link);
+    pageData = await fetch(link);
   } catch (error: any) {
     console.log(error.toJSON());
   }
   if (!pageData) return;
-  const $ = load(pageData.data);
+  const $ = load(await pageData.text());
   // Selections for each element we need to extract information from
-  // Not sure what else to call this and I don't have time to think
+  // NOTE: normal name = subject code + course number, no suffix?
   const normalNameHeader = $("#CourseInformationDiv > div.col-md-12:first-of-type > h2");
   const courseNameHeader = $("#CourseInformationDiv > div.col-md-12:first-of-type > h3");
   // This selection should include both the course description div and the 
@@ -237,7 +240,7 @@ export async function getCourseInformationFromLink(link: string) {
   const breadthInformationHeader = $("#CourseInformationDiv > .col-xs-12:last-of-type > h5:nth-child(2)");
   const subjectCodeHeader = $("#CourseInformationDiv > .col-xs-12:last-of-type > h5:nth-child(3)");
 
-  /* Contains logic to assert we get matches for the selections above, might use, might not.
+  /* NOTE: Contains logic to assert we get matches for the selections above, might use, might not.
   const assertNonEmptySets = (...args: Cheerio<Element>[]) => {
     const areNonEmpty = args.reduce((prev, item) => (prev && item.length > 0), true);
     if (areNonEmpty === false) 
@@ -253,24 +256,29 @@ export async function getCourseInformationFromLink(link: string) {
   */
   
   const courseDescriptionDiv = $(courseDescriptionLabelSelection[0]);
-  let preOrCorequisitesDiv: Cheerio<Element> | null = null;
+  type CheerioObject = ReturnType<typeof $>;
+  let preOrCorequisitesDiv: CheerioObject | null = null;
+  // NOTE: For some reason, both the course description label and pre-or-corequisites 
+  // label can be selected in the same way.
   if (courseDescriptionLabelSelection.length > 1) {
     preOrCorequisitesDiv = $(courseDescriptionLabelSelection[1]);
   }
 
+  // NOTE: Matches a pattern like 'ARABIC 1020A/B'
   const normalNameWithCodePattern = /\w+\s+(\d+)((?:[A-Z]\/?)+)?/g;
+  // NOTE: Did I mean to say subject code with course number? Might need a doc for nomenclature.
   const normalNameWithCourseCode = normalNameHeader.first().text().trim();
   const courseName = courseNameHeader.first().text().trim();
 
   // this will contain the course number and the suffixes for the course
-  let normalNameWithCourseCodeMatchesList = Array.from(
+  const [ normalNameWithCourseCodeMatches ] = Array.from(
     normalNameWithCourseCode.matchAll(normalNameWithCodePattern)
   );
-  if (!normalNameWithCourseCodeMatchesList 
-    || normalNameWithCourseCodeMatchesList.length <= 0) {
-    throw new Error(`Normal name with course code did not match the pattern. unmatched string: "${normalNameWithCourseCode}"`);
+  if (!normalNameWithCourseCodeMatches) {
+    throw new Error(
+      `Normal name with course code did not match the pattern. unmatched string: "${normalNameWithCourseCode}"`
+    );
   }
-  const normalNameWithCourseCodeMatches = normalNameWithCourseCodeMatchesList[0];
   
   const extractSuffixesFromListInHeader = (suffixList: string): string[] => {
     const listOfSuffixes: string[] = [];
@@ -280,7 +288,8 @@ export async function getCourseInformationFromLink(link: string) {
     if (!matches || matches.length <= 0) return [];
     for (const match of matches) {
       // Second element is the captured group, aka the suffix we want to extract
-      listOfSuffixes.push(match[1]);
+      if (match[1]) 
+        listOfSuffixes.push(match[1]);
     }
     return listOfSuffixes;
   };
@@ -289,22 +298,26 @@ export async function getCourseInformationFromLink(link: string) {
   const suffixesString = normalNameWithCourseCodeMatches[2] ?? "";
   const validSuffixes = extractSuffixesFromListInHeader(suffixesString);
   const courseDescription = courseDescriptionDiv.text().trim();
-  const getBoldedInformationLabelText = (set: Cheerio<Element> | null): string | null => {
+  
+  // Extracting requisite information
+  const getBoldedInformationLabelText = (set: CheerioObject | null): string | null => {
     if (set !== null && set.length > 0) {
       return set.text().trim();
     }
     return null;
   };
+
   const antirequisites = getBoldedInformationLabelText(antirequisitesContainer);
   let requisiteInformationText = getBoldedInformationLabelText(preOrCorequisitesDiv);
   // Remove any newlines/carriadge returns in the text
   requisiteInformationText = requisiteInformationText
     ? requisiteInformationText.replace(/(?:\r?\n)/g, "")
     : null;
+  
   const extractRequisiteInformation = (requisiteInformationText: string | null) => {
     /* 
-      The reason for these patterns is because I don't know in which order the
-      prerequisites, pre-or corequisites, or corequisites (if this one even exists) is listed
+      NOTE: The reason for these patterns is because I don't know in which order the
+      prerequisites, pre-or-corequisites, or corequisites (if this one even exists) is listed
     */
     if (!requisiteInformationText) {
       return {
@@ -318,10 +331,10 @@ export async function getCourseInformationFromLink(link: string) {
     };
 
     const getMatch = (pattern: RegExp): string | null => {
-      const matches = Array.from(requisiteInformationText.matchAll(pattern));
-      if (!matches || matches.length <= 0) return null;
       // Return the first match, capture group 1
-      return matches[0][1].trim();
+      const [ match ] = Array.from(requisiteInformationText.matchAll(pattern));
+      if (!match) return null;
+      return match[1]?.trim() ?? null;
     };
 
     return {
@@ -330,35 +343,47 @@ export async function getCourseInformationFromLink(link: string) {
       corequisites: getMatch(patterns.corequisites),
     };
   };
+
   const requisiteInformation = extractRequisiteInformation(requisiteInformationText);
-  const extraInformation = getBoldedInformationLabelText(extraInformationContainer);
-  const getSmallLabelText = (set: Cheerio<Element> | null): string | null => {
-    if (set !== null && set.length > 0) {
-      const header = set[0];
-      if (header.children.length < 2) {
-        throw new Error("The small label element has less than 2 child nodes");
-      }
-      const secondChild = header.children[1];
-      if (secondChild.type !== "text") {
-        throw new Error("The second child node for the small label is not a text node");
-      }
-      return secondChild.data.trim();
+  const extraInformation = extraInformationContainer
+    .contents().filter((_, el) => {
+      return !$(el).text().match(/extra\s+information/ig);
+    })
+    .text().trim()
+    .replace(/(?:\r?\n)/g, " ") // remove newlines and such, replace with spaces for separation
+    .replace(/ {2,}/g, " ");    // condense multiple consecutive spaces into 1 space
+  
+  // Extract information for course weight, breadth, and subject code.
+  const getSmallLabelText = (headerSet: CheerioObject | null): string | null => {
+    if (!headerSet || headerSet.length <= 0) return null;
+
+    const header = headerSet.first();
+    const headerContents = header.contents().filter((_, el) => el.type === "text");
+    if (headerContents.length <= 0) {
+      throw new Error("No text content found in the provided header");
     }
-    return null;
+    return headerContents.text().trim();
   };
+
   const courseWeight = Number(getSmallLabelText(courseWeightHeader));
+
   const extractBreadthCategoryLetter = (categoryTextInput: string | null): string | null => {
     const categoryPattern = /Category\s+([ABC])/gi;
     if (!categoryTextInput) {
       return null;
     }
-    const matches = Array.from(categoryTextInput.matchAll(categoryPattern));
-    if (!matches || matches.length <= 0) {
+    // Return the first match and the first capture group.
+    // return matches[0][1];
+    const [ match ] = Array.from(categoryTextInput.matchAll(categoryPattern));
+    if (!match) {
       throw new Error(`Category text (${categoryTextInput}) does not match the pattern Category X`);
     }
-    // Return the first match and the first capture group.
-    return matches[0][1];
+    if (!match[1]) {
+      throw new Error(`No first capture group for input: '${categoryTextInput}'`);
+    }
+    return match[1];
   };
+
   const breadth = extractBreadthCategoryLetter(
     getSmallLabelText(breadthInformationHeader)
   );
@@ -368,12 +393,11 @@ export async function getCourseInformationFromLink(link: string) {
   const getLocationFromLink = (link: string): string | null => {
     // NOTE: I should probably look to use a single, central pattern
     const pattern = /Courses\.cfm\?CourseAcadCalendarID=([A-Z]+)_.+?&SelectedCalendar=Live&ArchiveID=/g;
-    const matches = Array.from(link.matchAll(pattern));
-    if (matches.length === 0) {
-      return null;
-    }
-    return matches[0][1]; // first match, group 1
+    const [ match ] = Array.from(link.matchAll(pattern));
+    if (!match) return null;
+    return match[1] ?? null;
   };
+
   const getOtherLocations = (): string[] => {
     const locs: string[] = [];
     const links = $(".col-xs-12 > a");
@@ -388,6 +412,7 @@ export async function getCourseInformationFromLink(link: string) {
     }
     return locs;
   }
+
   const locationFromProvidedLink = getLocationFromLink(link);
   if (!locationFromProvidedLink) {
     throw new Error(`The location pattern does not match the course calendar link: ${link}`);
@@ -401,11 +426,11 @@ export async function getCourseInformationFromLink(link: string) {
     courseCode: `${subjectCode} ${courseNumber}`,
     subjectCode,
     courseNumber,
-    // subject: "Some Subject", // TODO: Is this redundant information?
     courseDescription,
     courseWeight,
     breadth,
     extraInformation,
+    antirequisites,
     preOrCorequisites: requisiteInformation.preOrCorequisites,
     prerequisites: requisiteInformation.prerequisites,
     corequisites: requisiteInformation.corequisites,
