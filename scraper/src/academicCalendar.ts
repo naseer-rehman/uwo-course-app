@@ -214,7 +214,9 @@ async function getCourseInformationLinksForSubject(subject: string) {
 /**
  * Retrieves all the information of a course from its information page provided as a link.
  * Links should be of the form: 
+ * 
  * https://www.westerncalendar.uwo.ca/Courses.cfm?CourseAcadCalendarID=MAIN_016882_1&SelectedCalendar=Live&ArchiveID=
+ * 
  * https://www.westerncalendar.uwo.ca/Courses.cfm?CourseAcadCalendarID=MAIN_020938_1&SelectedCalendar=Live&ArchiveID=
  * @param link 
  */
@@ -241,14 +243,15 @@ export async function getCourseInformationFromLink(link: string) {
   const subjectCodeHeader = $("#CourseInformationDiv > .col-xs-12:last-of-type > h5:nth-child(3)");
 
   /* NOTE: Contains logic to assert we get matches for the selections above, might use, might not.
-  const assertNonEmptySets = (...args: Cheerio<Element>[]) => {
+  type ElementType = typeof normalNameHeader extends Cheerio<infer X> ? X : never;
+  const assertNonEmptySets = (...args: Cheerio<ElementType>[]) => {
     const areNonEmpty = args.reduce((prev, item) => (prev && item.length > 0), true);
     if (areNonEmpty === false) 
       throw new Error("At least one selection from course calendar page did not get a match");
   };
 
   assertNonEmptySets(
-    courseCodeHeader, courseNameHeader, 
+    normalNameHeader, courseNameHeader,
     courseDescriptionLabelSelection, antirequisitesContainer,
     extraInformationContainer, courseWeightHeader,
     breadthInformationHeader, subjectCodeHeader
@@ -418,7 +421,6 @@ export async function getCourseInformationFromLink(link: string) {
     throw new Error(`The location pattern does not match the course calendar link: ${link}`);
   }
   const locations = [locationFromProvidedLink, ...getOtherLocations()];
-
 
   return {
     link,

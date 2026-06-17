@@ -31,9 +31,14 @@ async function getTimetableSubjectMapping() {
  * to a subject code used in Western's websites/applications.
  * @param {string} outputFileName the name of the output JSON file
  */
-async function generateTimetableSubjectMappingJSON(outputFileName = "timetableSubjectMapping") {
+async function generateTimetableSubjectMappingJSON(
+    outputFileName = "timetableSubjectMapping",
+    updateCurrentMapping = true
+  ) {
   const updatedSubjectMapping = await getTimetableSubjectMapping();
   fs.writeFileSync(`${outputFileName}.json`, JSON.stringify(updatedSubjectMapping), "utf8");
+  if (updateCurrentMapping)
+    subjectMapping = updatedSubjectMapping;
 }
 
 function has(key: string): boolean {

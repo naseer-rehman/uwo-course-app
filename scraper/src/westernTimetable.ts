@@ -10,17 +10,40 @@ import { encodeWeekdayList } from "../../shared/weekdayList";
  * Obtain the course offering information for a subject.
  * @param {string} subject the subject code, must be a key in subject mapping JSON file
  */
-async function getTimetablePageDataForSubject(subject:string) {
+async function getTimetablePageDataForSubject(subject: string) {
   const PAGE_URL = "https://studentservices.uwo.ca/secure/timetables/mastertt/ttindex.cfm";
   if (subjectCodes.has(subject)) {
-    const config: AxiosRequestConfig = {
+    const config = {
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
       },
     };
-    const data = `subject=${subjectCodes.get(subject)}&Designation=Any&catalognbr=&CourseTime=All&Component=All&time=&end_time=&day=m&day=tu&day=w&day=th&day=f&LocationCode=Any&command=search`;
-    const pageData = await axios.post(PAGE_URL, data, config);
-    return pageData;
+    const data = `subject=${subjectCodes.get(subject)}&Designation=Any&catalognbr=&CourseTime=All&Component=All&LocationCode=Any&command=search`;
+    const response = await fetch(PAGE_URL, {
+      method: "POST",
+      headers: config.headers,
+      body: data
+    });
+    // await fetch("https://studentservices.uwo.ca/secure/timetables/mastertt/ttindex.cfm", {
+    //   "credentials": "include",
+    //   "headers": {
+    //     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:151.0) Gecko/20100101 Firefox/151.0",
+    //     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8, image/jxl",
+    //     "Accept-Language": "en-US,en;q=0.9",
+    //     "Content-Type": "application/x-www-form-urlencoded",
+    //     "Upgrade-Insecure-Requests": "1",
+    //     "Sec-Fetch-Dest": "document",
+    //     "Sec-Fetch-Mode": "navigate",
+    //     "Sec-Fetch-Site": "same-origin",
+    //     "Sec-Fetch-User": "?1",
+    //     "Priority": "u=0, i"
+    //   },
+    //   "referrer": "https://studentservices.uwo.ca/secure/timetables/mastertt/ttindex.cfm",
+    //   "body": "subject=CALCULUS&Designation=Any&catalognbr=&CourseTime=All&Component=All&LocationCode=Any&command=search",
+    //   "method": "POST",
+    //   "mode": "cors"
+    // });
+    return await response.text();
   } else {
     throw new Error("Invalid subject");
   }
@@ -33,28 +56,35 @@ async function getTimetablePageDataForSubject(subject:string) {
 export async function getCourseOfferingDataForSubject(subject: string) {
   const courseHeaderRegex = /(([A-Z]+\s*\d+)([A-Z]*))\s*-\s*(.+)/;
 
+  // TODO: REWRITE THIS FUNCTION????????
+  // NOTE: Do I even need to do this check?
   if (subjectCodes.has(subject) === false) {
     throw new Error("Invalid subject");
   }
 
   const subjectCode = subjectCodes.get(subject);
   const pageData = await getTimetablePageDataForSubject(subject);
-  const $ = await load(pageData.data);
+  const $ = await load(pageData);
   const courseHeaders = await $("div.span12 > h4");
 
   let subjectCourseOfferingData = [];
 
-  const getTimetableDataFromTable = ($table: Cheerio<Element>): any => {
+  type CheerioType = typeof courseHeaders;
+  type ElementType = typeof courseHeaders extends Cheerio<infer X> ? X : never;
+  const getTimetableDataFromTable = ($table: CheerioType) => {
     const $tableBody = $table.children("tbody");
     const $tableRows = $tableBody.children("tr");
+    if ($tableRows.length <= 0) {
+      throw new Error(`Could not find the table rows in the timetable for ${subject}`);
+    }
 
-    const getRowInformation = ($tableRow: Cheerio<Element>) => {
+    const getRowInformation = ($tableRow: CheerioType) => {
       /**
        * 
        * @param $daysOfWeekEntry the `td` element that contains the table with the schedules days of the week
        * @returns the encoded integer that represents the schedules days of the week.
        */
-      const getDaysOfWeekInformation = ($daysOfWeekEntry: Cheerio<Element>): number => {
+      const getDaysOfWeekInformation = ($daysOfWeekEntry: CheerioType): number => {
         const $daysOfWeekEntries = $daysOfWeekEntry.find(".daysTable > tbody > tr > td");
         const daysOfWeek: string[] = [];
         for (let i = 0; i < $daysOfWeekEntries.length; ++i) {
@@ -78,37 +108,25 @@ export async function getCourseOfferingDataForSubject(subject: string) {
       nextEntry();
       const classNumber = getEntryText();
       nextEntry();
-      const daysOfTheWeek = getDaysOfWeekInformation(currentEntry);
-      nextEntry();
-      const startTime = getEntryText();
-      nextEntry();
-      const endTime = getEntryText();
-      nextEntry();
-      const location = getEntryText();
-      nextEntry();
-      const instructorName = getEntryText();
-      nextEntry();
       const requisitesAndConstraints = getEntryText();
       nextEntry();
       const fillStatus = getEntryText();
       nextEntry();
-      const campus = getEntryText(); 
+      const campus = getEntryText();
+      nextEntry();
+      const deliveryType = getEntryText();
 
       return {
         sectionNumber,
         componentType,
         classNumber,
-        daysOfTheWeek,
-        startTime,
-        endTime,
-        location,
-        instructorName,
         requisitesAndConstraints,
         fillStatus,
         campus,
+        deliveryType
       };
     };
-    
+
     const rowInformationList = [];
 
     for (let i = 0; i < $tableRows.length; ++i) {
@@ -125,7 +143,7 @@ export async function getCourseOfferingDataForSubject(subject: string) {
    * @param selector css selector
    * @returns the next sibling element that matches the selector
    */
-  const getNextMatchingSibling = (element: Cheerio<Element>, selector: string): Cheerio<Element> | null => { 
+  const getNextMatchingSibling = (element: CheerioType, selector: string): CheerioType | null => {
     let nextSibling = element.next();
     while (nextSibling && nextSibling.is(selector) === false) {
       nextSibling = nextSibling.next();
@@ -136,11 +154,12 @@ export async function getCourseOfferingDataForSubject(subject: string) {
     return nextSibling;
   };
 
-  const getCourseOfferingDataFromHeader = (header: Element) => {
+  const getCourseOfferingDataFromHeader = (header: ElementType) => {
     const $header = $(header);
     const $courseDescription = $header.next("p");
-    const $scheduleTable = getNextMatchingSibling($header, "table");
-    if (!$scheduleTable) {
+    // const $scheduleTable = getNextMatchingSibling($header, "table");
+    const $scheduleTable = $header.nextAll("table");
+    if (!$scheduleTable || $scheduleTable.length <= 0) {
       throw new Error("Could not find the course offering schedule table");
     }
     // TODO: Define a course offering code = course code + offering suffix?
@@ -160,7 +179,7 @@ export async function getCourseOfferingDataForSubject(subject: string) {
     const courseNumber = courseHeaderMatch[2];
     const suffixes = courseHeaderMatch[3];
     const courseCode = `${subjectCode} ${courseNumber}`;
-    
+
     // TODO: Find out if we want to extract the requisite and extra information from the course description label
     //  Or do I instead only extra Extra Information from the course description?
     const courseDescription = $courseDescription.text();
@@ -178,10 +197,12 @@ export async function getCourseOfferingDataForSubject(subject: string) {
   };
 
   for (let i = 0; i < courseHeaders.length; ++i) {
-    const courseOfferingData = getCourseOfferingDataFromHeader(courseHeaders[i]);
-    subjectCourseOfferingData.push(courseOfferingData);
-    break;
-    await sleep(1);
+    const courseHeader = courseHeaders[i];
+    if (courseHeader) {
+      const courseOfferingData = getCourseOfferingDataFromHeader(courseHeader);
+      subjectCourseOfferingData.push(courseOfferingData);
+      break;
+    }
   }
 
   return subjectCourseOfferingData;
