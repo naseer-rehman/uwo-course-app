@@ -1,0 +1,17 @@
+# Purpose:
+  # - Being able to develop on any machine with docker
+  # - 
+# use bun image
+# mount the backend directory?
+# install the dependencies
+# 
+
+# use the official Bun image
+# see all versions at https://hub.docker.com/r/oven/bun/tags
+FROM oven/bun:1 AS base
+WORKDIR /usr/src/app
+VOLUME /usr/src/app
+
+USER bun
+EXPOSE 3000/tcp
+ENTRYPOINT ["bun", "run", "dev"]
