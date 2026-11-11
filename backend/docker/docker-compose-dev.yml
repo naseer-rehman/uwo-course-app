@@ -9,6 +9,9 @@ services:
       - postgres
     ports:
       - "3000:3000"
+      - "4000:4000"
+    environment:
+      POSTGRES_HOST: postgres
   postgres:
     image: postgres:18-alpine
     restart: always
@@ -27,7 +30,8 @@ services:
       POSTGRES_PASSWORD: secret
       POSTGRES_DB: course_app
     volumes:
-      - ../database/data:/var/lib/postgresql
+      - ../database/volume:/var/lib/postgresql
+      - ../database/init_scripts:/docker-entrypoint-initdb.d
 
   pgadmin:
     image: dpage/pgadmin4:9.8

@@ -5,6 +5,7 @@
   "private": true,
   "main": "src/main.ts",
   "scripts": {
+    "dockerstack": "docker compose -f docker/docker-compose-dev.yml up",
     "dev": "bun run src/main.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -12,12 +13,21 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/connect-pg-simple": "^7.0.3",
+    "@types/cookie-parser": "^1.4.10",
+    "@types/express-session": "^1.19.0",
+    "@types/node": "^26.6.6",
+    "@types/pg": "^8.23.1"
   },
   "peerDependencies": {
     "typescript": "^5"
   },
   "dependencies": {
-    "express": "^5.2.1"
+    "connect-pg-simple": "^10.0.0",
+    "cookie-parser": "^1.4.7",
+    "express": "^5.2.1",
+    "express-session": "^1.19.0",
+    "pg": "^8.23.1"
   }
 }
