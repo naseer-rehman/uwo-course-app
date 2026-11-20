@@ -1,11 +1,13 @@
 import express, { type Request, type Response } from "express";
-import loginController from "../controllers/loginController";
+import authController from "../controllers/authController";
 
 const router = express.Router();
 
 // TODO: What do I do for the root route
-router.get("/", async () => {});
-// TODO: I might have to move this route
-router.get("/status", loginController.checkLoginStatus);
+router.get("/", async (req, res) => {
+  res.send("Sup").status(501);
+});
+
+router.post("/", authController.attemptLogin);
 
 export default router;

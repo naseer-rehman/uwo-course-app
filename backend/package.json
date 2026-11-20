@@ -7,7 +7,8 @@
   "scripts": {
     "dockerstack": "docker compose -f docker/docker-compose-dev.yml up",
     "dev": "bun run src/main.ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "nukedb": "echo \"Nuking db\""
   },
   "keywords": [],
   "author": "",
@@ -28,6 +29,7 @@
     "cookie-parser": "^1.4.7",
     "express": "^5.2.1",
     "express-session": "^1.19.0",
-    "pg": "^8.23.1"
+    "pg": "^8.23.1",
+    "zod": "^4.6.7"
   }
 }
