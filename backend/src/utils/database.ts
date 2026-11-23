@@ -1,4 +1,4 @@
-import pg from "pg";
+import pg, { type Pool } from "pg";
 
 const pool = new pg.Pool({
   user: Bun.env.POSTGRES_USER ?? 'dbuser',
@@ -14,5 +14,19 @@ console.log(`Created pg pool connection with user ${Bun.env.POSTGRES_USER}`);
 
 const response = await pool.query("SELECT NOW()");
 console.log(response.rows[0]);
+
+export async function testConnection(pool: Pool, log = true) {
+  try {
+    const response = await pool.query("SELECT NOW()");
+    if (log)
+      console.log(response.rows[0]);
+    return true;
+  } catch (error) {
+    if (log)
+      console.error(error);
+    return false;
+  }
+}
+
 
 export default pool;

@@ -13,4 +13,6 @@ CREATE TABLE IF NOT EXISTS auth_requests (
   status        auth_request_status NOT NULL
 );
 
-CREATE TYPE auth_request_status AS ENUM ('pending', 'verified', 'complete');
+CREATE TYPE IF NOT EXISTS auth_request_status AS ENUM ('pending', 'verified', 'complete');
+
+CREATE INDEX IF NOT EXISTS user_emails ON users (uwo_email);
