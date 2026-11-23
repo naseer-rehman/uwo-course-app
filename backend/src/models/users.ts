@@ -43,7 +43,7 @@ export async function getAllUsers(maxEntries = 100): Promise<User[]> {
 
 
 export async function getUserById(id: string): Promise<User | null> {
-  const result = await dbPool.query<UserRow>(`SELECT * FROM users AS u WHERE u.id == $1`, [id]);
+  const result = await dbPool.query<UserRow>(`SELECT * FROM users AS u WHERE u.id = $1`, [id]);
 
   if (!result.rowCount || result.rowCount < 1) {
     return null;
@@ -61,16 +61,29 @@ export async function getUserById(id: string): Promise<User | null> {
 }
 
 export async function getUserByEmail(email: string): Promise<User | null> {
-  const result = await dbPool.query<UserRow>(`SELECT * FROM users AS u WHERE u.uwo_email == $1`, [email]);
-  return null;
+  const result = await dbPool.query<UserRow>(`SELECT * FROM users AS u WHERE u.uwo_email = $1`, [email]);
+
+  if (!result.rowCount || result.rowCount < 1) {
+    return null;
+  }
+  if (result.rowCount > 1) {
+    // TODO: Named error
+    throw new Error("More than 1 user for the same email.");
+  }
+
+  let user = null;
+  for (let row of result.rows) {
+    user = mapUserRowToUser(row);
+  }
+  return user;
 }
 
 
 export async function createNewUser(uwoEmail: string) {
   const queryString = 
     `INSERT INTO users(uwo_email, created_at, last_login_at) \
-    VALUES ($1, $2, $3)`;
-  const dateNow = Date.now();
+    VALUES ($1, $2, $3) RETURNING *`;
+  const dateNow = new Date();
   const result = await dbPool.query<UserRow>(queryString, [
     uwoEmail,
     dateNow,
@@ -86,8 +99,35 @@ export async function createNewUser(uwoEmail: string) {
 }
 
 
+export async function deleteUserById(userId: string) {
+  const result = await dbPool.query("DELETE FROM users WHERE id = $1", [userId]);
+  if (!result.rowCount || result.rowCount === 0) {
+    throw new Error(`Deleting user with id ${userId} failed.`);
+  }
+  if (result.rowCount > 1) {
+    throw new Error(`More than one user deleted`);
+  }
+  return true;
+}
+
+
+export async function deleteUserByEmail(email: string) {
+  const result = await dbPool.query("DELETE FROM users WHERE uwo_email = $1", [email]);
+  if (!result.rowCount || result.rowCount === 0) {
+    throw new Error(`Deleting user with given email failed.`);
+  }
+  if (result.rowCount > 1) {
+    throw new Error(`More than one user deleted`);
+  }
+  return true;
+}
+
+
 export default {
   getAllUsers,
   getUserById,
+  getUserByEmail,
   createNewUser,
+  deleteUserById,
+  deleteUserByEmail,
 };
