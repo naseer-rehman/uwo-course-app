@@ -1,5 +1,6 @@
 import pg, { type Pool } from "pg";
 
+
 const pool = new pg.Pool({
   user: Bun.env.POSTGRES_USER ?? 'dbuser',
   password: Bun.env.POSTGRES_PASSWORD ?? 'secretpassword',
