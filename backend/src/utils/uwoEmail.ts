@@ -2,8 +2,8 @@ import * as z from "zod";
 
 const emailSchema = z.email();
 
-type Email = string;
-type UWOEmail = string;
+export type Email = string;
+export type UWOEmail = string;
 
 // NOTE: from the database definition for max email length
 const MAX_EMAIL_LENGTH = 320; 

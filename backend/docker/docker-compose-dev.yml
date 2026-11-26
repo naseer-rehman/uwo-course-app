@@ -6,7 +6,8 @@ services:
     volumes:
       - ..:/usr/src/app
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     ports:
       - "3000:3000"
       - "4000:4000"
@@ -26,12 +27,17 @@ services:
     ports:
       - "5432:5432"
     environment:
-      # POSTGRES_USER: postgres
+      POSTGRES_USER: postgres
       POSTGRES_PASSWORD: secret
       POSTGRES_DB: course_app
     volumes:
       - ../database/volume:/var/lib/postgresql
       - ../database/init_scripts:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   pgadmin:
     image: dpage/pgadmin4:9.8

@@ -8,7 +8,7 @@
     "dockerstack": "docker compose -f docker/docker-compose-dev.yml up",
     "dev": "bun run src/main.ts",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "nukedb": "echo \"Nuking db\"",
+    "nukedb": "sudo rm -r ./database/volume/*",
     "test:docker": "docker compose -f docker/docker-compose-test.yml up"
   },
   "keywords": [],

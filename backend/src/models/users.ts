@@ -105,7 +105,9 @@ export async function deleteUserById(userId: string) {
     throw new Error(`Deleting user with id ${userId} failed.`);
   }
   if (result.rowCount > 1) {
-    throw new Error(`More than one user deleted`);
+    // throw new Error(`More than one user deleted`);
+    // TODO: Figure out if this should be a soft error or not.
+    console.warn("More than one user deleted");
   }
   return true;
 }
